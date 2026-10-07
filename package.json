@@ -9,8 +9,8 @@
     "test": "node test/model.test.mjs && node test/timeline.test.mjs && node test/columns.test.mjs && node test/export.test.mjs",
     "build:app": "node build-app.mjs"
   },
-  "dependencies": {},
   "devDependencies": {
+    "@tauri-apps/cli": "^2.12.1",
     "esbuild": "^0.25.0"
   }
 }
