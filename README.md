@@ -1,238 +1,860 @@
 # OpenGantt
 
-> **Made with AI.** This project was built entirely with AI assistance. Every line of code, this README, and the design of the chart were produced in collaboration with a large language model. It is shared as-is for anyone who finds it useful.
+> A lightweight, YAML-driven Gantt chart for the browser, Obsidian, and desktop.
 
-Draws Gantt charts from a small, readable YAML block — planned bars, actual bars and live progress, on one
-timeline. It runs as a single HTML file you can double-click, and as a plugin inside Obsidian. Both share
-the same chart code, so the columns, tooltips, print and export behave identically.
+OpenGantt turns a small YAML definition into an interactive Gantt chart with **planned work, actual work, live progress, hierarchical tasks, custom columns, printing, and export**.
 
-The YAML is the whole document: searchable, diffable, and easy to keep in version control next to whatever
-it describes.
+It can be used in three ways:
 
-## Built with ts-gantt
+* 🌐 **Standalone web app** — open a single HTML file directly in your browser.
+* 📝 **Obsidian plugin** — embed Gantt charts directly inside Markdown notes.
+* 🖥️ **Desktop application** — package the same frontend as a Tauri application.
 
-OpenGantt is built on top of [ts-gantt](https://github.com/yermolim/ts-gantt), a simple TypeScript library
-for creating Gantt charts combined with a task grid. The library is MIT-licensed and provides the core
-rendering engine: a two-part layout (task grid + timeline), tree-like expandable rows, planned/actual date
-pairs, and four chart scales (day, week, month, year). OpenGantt takes that foundation and wraps it in a
-YAML-driven editor, an Obsidian plugin, a standalone HTML file, and a print/export pipeline.
+The chart data remains plain YAML, making it easy to read, edit, search, diff, back up, and keep alongside the project it describes.
 
-The chart's dark Gruvbox theme, the column system, the tooltip, and the print renderer are OpenGantt's own;
-the underlying chart geometry, bar drawing, and scale switching come from ts-gantt. If you want to build
-something similar, ts-gantt is the place to start.
+---
 
-## Quick start
+## ✨ Features
 
-Open `dist/Gantt.html` in any modern browser. No install, no network, no build step — it is one file.
+### 📅 Gantt charts
 
-- Type or paste YAML in the editor on the left. The chart on the right redraws as you type and keeps your
-  scale, mode and collapsed rows. A YAML mistake shows a message instead of breaking anything.
-- **Open…** reads a `.md` note, a `.yaml` chart, or any text file. You can also drop a file on the window.
-- **Save** writes back into the file you opened, in the format it came from. **Save as…** picks a new name
-  or type. **Copy as Obsidian block** puts the YAML on the clipboard wrapped in a ````gantt` fence,
-  ready to paste into a note.
-- Ctrl/Cmd+S saves, Ctrl/Cmd+Shift+S saves as, Ctrl/Cmd+O opens, Ctrl/Cmd+P prints.
-- Your work is kept automatically in the browser and comes back when you reopen the file. Table layout and
-  export options are remembered too.
+* Planned and actual task bars
+* Live progress for open tasks
+* Day, week, month, and year scales
+* Today indicator
+* Task hierarchy with expandable/collapsible rows
+* Milestones
+* Planned vs. actual comparison
+* Actual bars with optional diagonal hatching
+* Automatic progress calculation
+* Task status and schedule variance
 
-To rebuild the standalone file after changing anything in `src/`:
+### 📊 Customisable task table
 
-```
+The table alongside the timeline can display:
 
-npm run build:app
+* Task name
+* Progress
+* Planned start/end dates
+* Actual start/end dates
+* Planned duration
+* Actual duration
+* Schedule variance
+* Status
+* Notes
+* Custom YAML fields
 
-```
+Columns can be reordered, hidden, or added from the chart interface.
 
-No dependencies are needed for that build.
+Any additional property placed on a task automatically becomes available as a custom column.
 
-## The chart
+### 📝 YAML-driven
 
-```gantt
+Charts are defined using simple YAML:
+
+```yaml
+scale: week
+mode: both
+title: Example project
+
 rows:
-  - label: Stage 1 - Complete Initial Ideas
+  - label: Stage 1 - Planning
     plan: [2026-09-07, 2026-09-12]
     fact: [2026-09-07, 2026-09-14]
+
     children:
-      - label: Complete Initial/Title Section
-        plan: [2026-09-07, 2026-09-10]
-        fact: [2026-09-07, 2026-09-14]
+      - label: Collect requirements
+        plan: [2026-09-07, 2026-09-09]
+        fact: [2026-09-07, 2026-09-10]
+
+      - label: Write specification
+        plan: [2026-09-10, 2026-09-12]
+        fact: [2026-09-11, 2026-09-14]
+
+  - label: Stage 2 - Development
+    plan: [2026-09-15, 2026-10-10]
+    fact: [2026-09-15]
 ```
 
-Row keys: `label`, `plan`, `fact`, `children`, `notes`.
+Because the chart is represented as text, it works particularly well with Git, Markdown, Obsidian, and other text-based workflows.
 
-- `plan: [start, end]` draws the planned bar. A single date (`plan: [date]`) is a one-day milestone.
-- `fact: [start, end]` draws the actual bar. A single date (`fact: [start]`) is an **open task**: it is drawn
-as a translucent progress bar from that date to today, with the percentage of the plan elapsed written on it.
-- `children` nest under their parent; click a parent's name (the ▾ / ▸ chevron) to collapse or expand it.
+---
 
-In Both mode the actual bar (transparent diagonal stripes) is laid over the planned bar, in the same row band.
+## 🚀 Quick start
 
-Optional keys next to `rows:`
+### Standalone version
 
-| Key ↕▾ | Values ↕▾ | Default ↕▾ |
-|---|---|---|
-| −`scale` | `day`, `week`, `month`, `year` | `day` |
-| `mode` | `plan`, `actual`, `both` | `both` |
-| `height` | pixels, 200 to 1600 | `520` |
-| `padding` | empty days before the first and after the last task, 0 to 365 | `7` |
-| `hatch` | `false` makes actual bars solid instead of transparent with diagonal stripes | `true` |
-| `progress` | `false` shows open-ended actuals as striped actual bars instead of the progress bar | `true` |
-| `collapsed` | `true` starts with every parent task collapsed (`startCollapsed` works too) | `false` |
-| `columns` | which table columns to show, and in what order, e.g. `columns: [progress, planEnd, owner]` or `columns: none` (see **Table columns**) | your saved choice |
-| `table` | `false` (or `hidden`) starts with the left-hand table hidden | your saved choice |
-| `title` | heading for printouts and exports | the file's name |
-⚙
+The repository contains a pre-built standalone application:
 
-`start`, `days`, `timezone`, `workdayStart`, `workdayEnd`, `today` and `events` are accepted but ignored.
-
-Hover a bar to see the task name, planned and actual dates, durations, progress and any `notes`.
-
-## Saving
-
-Save writes back into the file the chart came from, keeping its format:
-
-| You opened | Save writes |
-|---|---|
-| a `.md` note | the **whole note**, with only the `gantt` block's YAML replaced. Frontmatter, other headings, other code blocks, everything after the chart — all untouched. |
-| a `.yaml` / `.yml` file | just the YAML. |
-| a `.txt` or anything else | just the YAML, with the same extension. |
-
-- In Chrome and Edge (any Chromium browser), **Open…** and **Save** use the real file pickers, so Ctrl+S
-writes straight back to the file on disk — no download, no dialog after the first save. The file name in
-the header shows what will be written, with a **•** while there are unsaved changes.
-- In Firefox and Safari, which have no write access to files, **Save** downloads a file with the right name
-and extension instead. Reopening that download and saving again gives you the next version.
-- If a note holds several `gantt` blocks, the first one is loaded and only that one is rewritten; the others
-are left alone.
-- A note with no `gantt` block yet gets one added at the end, and the rest of the note is left untouched.
-- Charts that came from YAML and are saved as a `.md` get wrapped in a `gantt` fence, so they render straight
-away in Obsidian.
-- The **Example** button drops any link to the file you had open, so saving the example can never overwrite
-your own chart.
-
-## Table columns
-
-The table left of the timeline is yours to arrange.
-
-- **Table** button: hide or show the whole table (more room for the timeline). Your columns are kept.
-- **Columns** button: tick the columns you want, and reorder them with the arrows or by dragging the grip.
-**Show all** and **Reset** are there too.
-- **In the chart:** drag a column heading sideways to move it, or right-click a heading for *Hide*,
-*Move left / right* and *Choose columns*. (On touch screens use the Columns panel; dragging headings is
-for mouse and pen.)
-- Name always stays first. Your choice is remembered and shared by all your charts, and open charts update
-together.
-
-Columns you can add, beyond the five shown by default:
-
-| Column ↕▾ | Shows ↕▾ | `columns:` name ↕▾ |
-|---|---|---|
-| −Progress | % of the plan elapsed | `progress` |
-| −Start planned / End planned | planned dates | `planStart` / `planEnd` |
-| −Start actual / End actual | actual dates (`ongoing` while open) | `actualStart` / `actualEnd` |
-| Planned days / Actual days | length in days, counting both end days | `planDays` / `actualDays` |
-| Variance | days late (`+3 d`) or early (`−2 d`) against the planned end; for an unfinished task past its planned end, days overdue so far | `variance` |
-| Status | Not started, In progress, Overdue, Completed, Completed late (coloured like the task name) | `status` |
-| Notes | the task's `notes` | `notes` |
-⚙
-
-**Your own columns:** any extra key on a task becomes a column, with the key as its heading.
-
-```
-rows:
-  - label: Write essay
-    plan: [2026-12-01, 2027-01-10]
-    owner: Sam
-    priority: High
+```text
+dist/Gantt.html
 ```
 
-`owner` and `priority` now appear in the Columns panel (tagged YAML) and in the tooltip. Values can be text,
-numbers, dates or a short list. Names are matched ignoring case and punctuation, so
-`columns: [Start planned, owner]` works. A name no task has yet still creates an empty column, which is a
-quick way to see the heading before you fill in values.
+Simply open it in a modern browser.
 
-A chart that sets `columns:` or `table:` keeps exactly that layout; changes made in the toolbar apply to that
-view only and are not saved.
+No server is required and the standalone build does not need an internet connection.
 
-## Print and export
+The application provides:
 
-- **Print** prints the *whole* chart, not just the visible part: the rows you have expanded, the columns you
-have shown, at the current scale and mode, in light colours. A long timeline is fitted to the page width,
-long charts continue on further pages with the heading repeated and no row cut in half, and every page is
-numbered. In the print dialog choose *Save as PDF* to get a PDF.
-- **Export** gives you a **PNG image**, an **SVG** (vector, editable) or a **CSV** table. Images show the
-whole chart at the on-screen scale, so a wide chart makes a wide image. The CSV lists *every* task
-(collapsed or not) with a Level column, plus the columns you have shown, as plain values (ISO dates,
-numbers) ready for a spreadsheet.
-- **Options** (in the Export panel, remembered): print page Landscape or Portrait, image colours Light or
-Dark, include title, include legend.
+* YAML editing
+* Open
+* Save
+* Save As
+* Obsidian block copying
+* Example chart
+* Printing
+* PNG export
+* SVG export
+* CSV export
+* Timeline scaling
+* Plan / Actual / Both modes
+* Table and column controls
+
+### Keyboard shortcuts
+
+| Shortcut                       | Action  |
+| ------------------------------ | ------- |
+| `Ctrl` / `Cmd` + `O`           | Open    |
+| `Ctrl` / `Cmd` + `S`           | Save    |
+| `Ctrl` / `Cmd` + `Shift` + `S` | Save As |
+| `Ctrl` / `Cmd` + `P`           | Print   |
+
+---
+
+# 📦 Installation
+
+## Requirements
+
+### For using the standalone application
+
+No installation is required.
+
+Open:
+
+```text
+dist/Gantt.html
+```
+
+in a modern browser.
+
+### For development
+
+The JavaScript build system requires:
+
+* [Node.js](https://nodejs.org/) LTS
+* npm
+
+The Obsidian plugin build uses `esbuild`.
+
+### For building the desktop application
+
+The desktop version uses:
+
+* Node.js
+* npm
+* Rust
+* Cargo
+* Tauri 2
+
+The Rust project specifies a minimum Rust version of **1.77.2**.
+
+---
+
+# 🛠️ Development setup
+
+Clone the repository:
+
+```bash
+git clone https://github.com/JebbyCodes/OpenGantt.git
+cd OpenGantt
+```
+
+Install the JavaScript dependencies:
+
+```bash
+npm install
+```
+
+The dependencies and available npm scripts are defined in `package.json`.
+
+---
+
+# 🧱 Building
+
+OpenGantt has separate build processes for the standalone application and the Obsidian plugin.
+
+## Standalone application
+
+Build the browser version with:
+
+```bash
+npm run build:app
+```
+
+This runs `build-app.mjs`.
+
+The build produces:
+
+```text
+dist/
+├── Gantt.html
+└── index.html
+```
+
+`Gantt.html` is the standalone application intended to be opened directly.
+
+`index.html` contains the same generated application and serves as the frontend entry point used by Tauri.
+
+### Offline operation
+
+The standalone application bundles its required JavaScript, CSS, and `js-yaml` dependency into the generated HTML.
+
+Nothing needs to be downloaded when the generated file is opened.
+
+---
 
 ## Obsidian plugin
 
-OpenGantt is also an Obsidian plugin. The YAML lives in your note, so it is searchable, synced and versioned
-with the rest of your vault.
+Build the Obsidian plugin with:
 
-You need Node.js LTS once, to bundle the plugin (no third-party chart library is used).
-
-**Windows:** double-click `BUILD-AND-INSTALL.bat`, drag your vault folder onto the window, press Enter.
-
-**Any system:**
-
+```bash
+npm run build
 ```
-npm install
+
+The build produces:
+
+```text
+main.js
+styles.css
+```
+
+`manifest.json` is already present in the repository and is copied alongside those files when the optional vault path is supplied.
+
+The build script bundles the plugin while leaving Obsidian, Electron, CodeMirror, and Lezer packages external because they are provided by the Obsidian host application.
+
+### Automatically install into an Obsidian vault
+
+Pass the path to your Obsidian vault:
+
+```bash
 npm run build -- "/path/to/your/vault"
 ```
 
-Without the vault path, `npm run build` just produces `main.js`, `manifest.json` and `styles.css`. Copy those
-three into `<vault>/.obsidian/plugins/gantt/` yourself.
+For example, on Windows:
 
-Then in Obsidian: Settings > Community plugins > turn off Restricted mode > enable **OpenGantt**.
-
-Put a `gantt` block in any note:
-
+```powershell
+npm run build -- "C:\Users\YourName\Documents\Obsidian Vaults\My Vault"
 ```
-```gantt
+
+The build script installs the plugin into:
+
+```text
+<vault>/.obsidian/plugins/gantt/
+```
+
+The resulting directory contains:
+
+```text
+<vault>/.obsidian/plugins/gantt/
+├── main.js
+├── manifest.json
+└── styles.css
+```
+
+The repository also contains a Windows helper:
+
+```text
+BUILD-AND-INSTALL.bat
+```
+
+which can be used to automate the installation process where available.
+
+### Manual installation
+
+If you build without specifying a vault:
+
+```bash
+npm run build
+```
+
+copy:
+
+```text
+main.js
+manifest.json
+styles.css
+```
+
+to:
+
+```text
+<vault>/.obsidian/plugins/gantt/
+```
+
+Then open Obsidian and go to:
+
+**Settings → Community plugins → enable OpenGantt**
+
+---
+
+# 🖥️ Building the desktop application
+
+OpenGantt uses [Tauri 2](https://tauri.app/) for its desktop shell.
+
+The Tauri configuration specifies:
+
+* Application name: `OpenGantt`
+* Version: `1.2.0`
+* Frontend directory: `dist/`
+* Frontend build command: `npm run build:app`
+
+After installing the required Rust/Tauri tooling, build the desktop application with:
+
+```bash
+npx tauri build
+```
+
+Tauri will first run:
+
+```bash
+npm run build:app
+```
+
+and then package the generated `dist/` frontend into the native application.
+
+For development with the Tauri shell:
+
+```bash
+npx tauri dev
+```
+
+The exact native output location depends on the platform and Tauri's build configuration.
+
+---
+
+# 🧪 Testing
+
+Run the project's test suite with:
+
+```bash
+npm test
+```
+
+The test command currently runs tests covering:
+
+* Model behaviour
+* Timeline calculations
+* Table columns
+* Export functionality
+
+The individual test files are:
+
+```text
+test/model.test.mjs
+test/timeline.test.mjs
+test/columns.test.mjs
+test/export.test.mjs
+```
+
+The available test command is defined directly in `package.json`.
+
+---
+
+# 📐 YAML reference
+
+## Top-level options
+
+The following options can be placed alongside `rows`:
+
+| Option      | Values                         |      Default | Description                      |
+| ----------- | ------------------------------ | -----------: | -------------------------------- |
+| `scale`     | `day`, `week`, `month`, `year` |        `day` | Timeline scale                   |
+| `mode`      | `plan`, `actual`, `both`       |       `both` | Which bars to display            |
+| `height`    | `200`–`1600`                   |        `520` | Chart height in pixels           |
+| `padding`   | `0`–`365`                      |          `7` | Empty days around the chart      |
+| `hatch`     | `true`, `false`                |       `true` | Diagonal hatching on actual bars |
+| `progress`  | `true`, `false`                |       `true` | Show progress for open actuals   |
+| `collapsed` | `true`, `false`                |      `false` | Start with parent rows collapsed |
+| `columns`   | Column names                   | Saved layout | Select and order table columns   |
+| `table`     | `true`, `false`, `hidden`      | Saved layout | Show or hide the task table      |
+| `title`     | Text                           |    File name | Title used for print/export      |
+
+### Example
+
+```yaml
+scale: month
+mode: both
+height: 700
+padding: 14
+hatch: true
+progress: true
+collapsed: false
+title: EPQ Project
+
 rows:
-  - label: Stage 1 - Complete Initial Ideas
+  - label: Research
+    plan: [2026-09-07, 2026-10-10]
+    fact: [2026-09-07]
+```
+
+---
+
+## Task properties
+
+Each task can contain:
+
+| Property   | Description             |
+| ---------- | ----------------------- |
+| `label`    | Task name               |
+| `plan`     | Planned start/end dates |
+| `fact`     | Actual start/end dates  |
+| `children` | Nested tasks            |
+| `notes`    | Additional information  |
+
+Additional properties become custom table columns.
+
+For example:
+
+```yaml
+rows:
+  - label: Write literature review
+    plan: [2026-10-01, 2026-10-14]
+    fact: [2026-10-02, 2026-10-17]
+    owner: Alex
+    priority: High
+```
+
+This automatically makes `owner` and `priority` available as table columns.
+
+---
+
+## Planned dates
+
+A normal planned task uses two dates:
+
+```yaml
+plan: [2026-10-01, 2026-10-14]
+```
+
+A single planned date creates a milestone:
+
+```yaml
+plan: [2026-10-14]
+```
+
+---
+
+## Actual dates
+
+A completed or ongoing task can have an actual start and end:
+
+```yaml
+fact: [2026-10-02, 2026-10-17]
+```
+
+An open task can contain only its actual start:
+
+```yaml
+fact: [2026-10-02]
+```
+
+Open actual tasks extend to the current date and can display their calculated progress.
+
+---
+
+## Hierarchical tasks
+
+Use `children` to create nested tasks:
+
+```yaml
+rows:
+  - label: Stage 1 - Research
+    plan: [2026-09-07, 2026-10-01]
+
+    children:
+      - label: Find sources
+        plan: [2026-09-07, 2026-09-14]
+
+      - label: Evaluate sources
+        plan: [2026-09-15, 2026-09-21]
+
+      - label: Write notes
+        plan: [2026-09-22, 2026-10-01]
+```
+
+Parent rows can be expanded or collapsed using the chart controls.
+
+---
+
+# 📊 Table columns
+
+The chart includes several built-in columns.
+
+| Column        | YAML name     | Description                        |
+| ------------- | ------------- | ---------------------------------- |
+| Progress      | `progress`    | Percentage of planned time elapsed |
+| Start planned | `planStart`   | Planned start date                 |
+| End planned   | `planEnd`     | Planned end date                   |
+| Start actual  | `actualStart` | Actual start date                  |
+| End actual    | `actualEnd`   | Actual end date                    |
+| Planned days  | `planDays`    | Planned duration                   |
+| Actual days   | `actualDays`  | Actual duration                    |
+| Variance      | `variance`    | Difference from planned completion |
+| Status        | `status`      | Current task status                |
+| Notes         | `notes`       | Task notes                         |
+
+For example:
+
+```yaml
+columns:
+  - progress
+  - planEnd
+  - actualEnd
+  - variance
+  - status
+```
+
+You can also use:
+
+```yaml
+columns: none
+```
+
+to hide the table columns.
+
+---
+
+# 💾 Saving and file formats
+
+OpenGantt can work with several file types.
+
+| Input            | Save behaviour                          |
+| ---------------- | --------------------------------------- |
+| `.md`            | Replaces only the selected Gantt block  |
+| `.yaml` / `.yml` | Saves YAML                              |
+| `.txt`           | Saves YAML using the same extension     |
+| Other text files | Saves YAML using the original extension |
+
+When editing a Markdown note containing a Gantt block, OpenGantt preserves the rest of the note.
+
+This includes:
+
+* Frontmatter
+* Headings
+* Other Markdown content
+* Other code blocks
+* Content after the Gantt chart
+
+If a Markdown note does not contain a Gantt block, OpenGantt can add one without replacing the rest of the document.
+
+---
+
+# 🖨️ Print and export
+
+OpenGantt supports printing and several export formats.
+
+### Print
+
+The print renderer:
+
+* Prints the complete chart rather than only the visible portion
+* Includes expanded rows
+* Includes the selected columns
+* Supports the current chart scale and mode
+* Uses a light print-friendly colour scheme
+* Splits long charts across pages
+* Repeats the heading on subsequent pages
+* Avoids cutting rows between pages
+* Numbers pages
+
+You can use your browser's **Save as PDF** option to create a PDF.
+
+### Export formats
+
+The export panel supports:
+
+* **PNG** — raster image
+* **SVG** — editable vector image
+* **CSV** — spreadsheet-compatible task data
+
+CSV exports include every task, including tasks hidden by collapsed parent rows.
+
+---
+
+# 📝 Obsidian usage
+
+OpenGantt can render charts directly inside Obsidian Markdown notes.
+
+Add a `gantt` code block:
+
+````markdown
+```gantt
+scale: week
+mode: both
+
+rows:
+  - label: Stage 1 - Planning
     plan: [2026-09-07, 2026-09-12]
     fact: [2026-09-07, 2026-09-14]
+
+    children:
+      - label: Research
+        plan: [2026-09-07, 2026-09-09]
+
+      - label: Planning
+        plan: [2026-09-10, 2026-09-12]
 ```
+````
+
+The YAML is visible while editing the Markdown source and is rendered as a chart in Reading View.
+
+### Alternative code-block name
+
+If another Obsidian plugin already uses the `gantt` code-block name, OpenGantt can use:
+
+````markdown
+```epq-gantt
+rows:
+  - label: Example
+    plan: [2026-09-07, 2026-09-12]
+```
+````
+
+---
+
+# 🎛️ Obsidian controls
+
+The Obsidian chart toolbar provides:
+
+* Day / Week / Month / Year
+* Plan / Actual / Both
+* Expand all
+* Collapse all
+* Table
+* Columns
+* Legend
+* Print
+* Export
+* Full screen
+* Reset
+
+The chart uses its own dark Gruvbox-inspired colours regardless of the active Obsidian theme.
+
+Full-screen mode uses browser fullscreen where supported. On environments where browser fullscreen is unavailable, OpenGantt expands within the available Obsidian window.
+
+---
+
+# 🏗️ Project structure
+
+```text
+OpenGantt/
+│
+├── app/
+│   ├── app.css
+│   ├── shell.js
+│   └── shim.js
+│
+├── dist/
+│   ├── Gantt.html
+│   └── index.html
+│
+├── src/
+│   ├── model.js
+│   ├── timeline.js
+│   ├── columns.js
+│   ├── chart.js
+│   ├── export.js
+│   ├── main.js
+│   └── styles.css
+│
+├── src-tauri/
+│   ├── Cargo.toml
+│   ├── tauri.conf.json
+│   └── ...
+│
+├── test/
+│   ├── model.test.mjs
+│   ├── timeline.test.mjs
+│   ├── columns.test.mjs
+│   └── export.test.mjs
+│
+├── vendor/
+│   └── js-yaml.min.js
+│
+├── build-app.mjs
+├── esbuild.mjs
+├── package.json
+├── package-lock.json
+├── manifest.json
+├── main.js
+├── styles.css
+├── LICENSE
+└── README.md
 ```
 
-- The YAML is visible while you edit the note and hidden in reading view, so there is no separate hide button.
-- If another plugin already uses the `gantt` block name, use ````epq-gantt` instead.
-- The toolbar has Day/Week/Month/Year, Plan/Actual/Both, Expand/Collapse all, Table and Columns, a Legend
-toggle (remembered), Print, Export, Full screen and Reset.
-- Full screen uses real browser fullscreen; press Esc or the button to leave. Where that is unavailable (e.g.
-phones) it fills the Obsidian window instead. The chart redraws at the new size and keeps your scale and mode.
-- The chart keeps its dark Gruvbox colours whatever your Obsidian theme is.
-- Printing the note itself, or Obsidian's own **Export to PDF**, gets the complete light version of every
-chart instead of a clipped dark box.
+### Important directories
 
-## How the chart is drawn
+| Path         | Purpose                                           |
+| ------------ | ------------------------------------------------- |
+| `app/`       | Standalone application's editor and browser shell |
+| `src/`       | Core Gantt chart implementation                   |
+| `src-tauri/` | Tauri desktop application                         |
+| `test/`      | Automated tests                                   |
+| `vendor/`    | Local third-party browser dependencies            |
+| `dist/`      | Generated standalone/Tauri frontend               |
 
-The whole chart is drawn by hand (table as HTML, timeline as SVG; print and export use a separate static SVG
-renderer that shares the same date-to-pixel geometry). Planned bars, actual bars, progress bars and the today
-line all use the same date-to-pixel function, so they always line up, and completed tasks are drawn exactly
-like any other task (striped actual bar over the planned bar). The chart opens scrolled to today; scroll left
-for the Progress / date columns.
+### Important build files
 
-## Files
+| File                        | Purpose                                |
+| --------------------------- | -------------------------------------- |
+| `build-app.mjs`             | Builds the standalone HTML application |
+| `esbuild.mjs`               | Builds the Obsidian plugin             |
+| `package.json`              | Defines dependencies and npm scripts   |
+| `src-tauri/tauri.conf.json` | Configures the Tauri application       |
+| `src-tauri/Cargo.toml`      | Defines the Rust/Tauri package         |
 
-| Path ↕▾ | What it is ↕▾ |
-|---|---|
-| −`app/` | the standalone app's shell (toolbar, editor, open/save) and a small shim for the browser |
-| −`src/` | the chart itself: model, timeline, columns, chart, export |
-| −`vendor/` | a copy of js-yaml, so the standalone file needs no network |
-| −`dist/Gantt.html` | the built standalone app — the file you double-click |
-| `build-app.mjs` | builds `dist/Gantt.html` from `app/` and `src/` |
-| `esbuild.mjs` | builds the Obsidian plugin (`main.js`, `styles.css`) from `src/` |
-| `test/` | Node tests for the model, timeline, columns and export |
-⚙
+---
 
-## License
+# 🔧 Available npm commands
 
-Released into the public domain under the [Unlicense](https://unlicense.org/).
+| Command             | Purpose                               |
+| ------------------- | ------------------------------------- |
+| `npm install`       | Install development dependencies      |
+| `npm run build`     | Build the Obsidian plugin             |
+| `npm run build:app` | Build the standalone HTML application |
+| `npm test`          | Run the automated tests               |
 
-The underlying [ts-gantt](https://github.com/yermolim/ts-gantt) library is MIT-licensed.
+---
 
+# 🧩 Architecture
+
+OpenGantt uses a shared chart implementation across its different interfaces.
+
+```text
+                    ┌─────────────────────┐
+                    │      YAML data      │
+                    └──────────┬──────────┘
+                               │
+                               ▼
+                    ┌─────────────────────┐
+                    │   OpenGantt model   │
+                    └──────────┬──────────┘
+                               │
+                 ┌─────────────┼─────────────┐
+                 │             │             │
+                 ▼             ▼             ▼
+             Browser        Obsidian       Tauri
+             frontend        plugin        desktop
+                 │             │             │
+                 └─────────────┼─────────────┘
+                               ▼
+                     ┌──────────────────┐
+                     │ Gantt renderer   │
+                     │ Timeline + table │
+                     └──────────────────┘
+```
+
+The standalone builder embeds the application's JavaScript, CSS, and YAML parser into a single HTML file. The Tauri configuration then uses the generated `dist/` directory as its frontend.
+
+---
+
+# 🔗 ts-gantt
+
+OpenGantt is based on the [`ts-gantt`](https://github.com/yermolim/ts-gantt) project.
+
+`ts-gantt` provides the underlying Gantt-chart concepts and rendering foundation, while OpenGantt adds its own:
+
+* YAML-driven format
+* Planned/actual/progress workflow
+* Gruvbox-inspired interface
+* Custom table columns
+* Tooltip system
+* Print renderer
+* Export system
+* Standalone application
+* Obsidian integration
+
+The underlying `ts-gantt` project is MIT licensed. OpenGantt itself is released under the Unlicense.
+
+---
+
+# 🤝 Contributing
+
+Contributions, bug reports, improvements, and feature ideas are welcome.
+
+Before submitting a change:
+
+1. Fork the repository.
+
+2. Create a branch for your change.
+
+3. Install dependencies with `npm install`.
+
+4. Make your changes.
+
+5. Run the test suite:
+
+   ```bash
+   npm test
+   ```
+
+6. Test the relevant build:
+
+   ```bash
+   npm run build
+   ```
+
+   or:
+
+   ```bash
+   npm run build:app
+   ```
+
+7. Open a pull request with a clear description of the change.
+
+For UI changes, include screenshots where useful.
+
+---
+
+# 🐛 Reporting bugs
+
+When reporting a problem, include as much of the following as possible:
+
+* Operating system
+* Browser or Obsidian version
+* OpenGantt version/commit
+* Whether you are using the standalone app, Obsidian plugin, or desktop application
+* The YAML that reproduces the issue
+* Console/build errors
+* Screenshots or recordings when appropriate
+
+A minimal reproducible example makes debugging considerably easier.
+
+---
+
+# 📄 License
+
+OpenGantt is released into the public domain under the **Unlicense**.
+
+See [`LICENSE`](LICENSE) for the full license text.
+
+OpenGantt incorporates the MIT-licensed [`ts-gantt`](https://github.com/yermolim/ts-gantt) project.
+
+---
+
+## Acknowledgements
+
+* **[ts-gantt](https://github.com/yermolim/ts-gantt)** — underlying Gantt chart foundation
+* **[js-yaml](https://github.com/nodeca/js-yaml)** — YAML parsing
+* **[Obsidian](https://obsidian.md/)** — Markdown knowledge-management platform supported by the plugin
+* **[Tauri](https://tauri.app/)** — desktop application framework
+
+---
+
+## ⚠️ Project status
+
+OpenGantt is an actively developed open-source project.
+
+The repository currently contains a standalone browser application, an Obsidian plugin build, and a Tauri desktop shell. Features and interfaces may change between versions.
+
+If you are using OpenGantt for important project planning, keep your YAML/Markdown source files under version control or maintain regular backups.
