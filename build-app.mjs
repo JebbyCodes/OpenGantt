@@ -11,7 +11,37 @@ imports["gantt-styles"] = b64(`const s=document.createElement("style");s.textCon
 imports.obsidian = b64(R("app/shim.js"));
 imports["gantt-shell"] = b64(R("app/shell.js"));
 
-const example = R("Example Gantt.md").match(/```gantt\n([\s\S]*?)```/)[1].replace(/\n$/, "");
+// The chart behind the Example button. "Example Gantt.md" wins if it is there; otherwise this stands in,
+// so the build works whether or not that note is kept in the repo.
+const DEFAULT_EXAMPLE = `scale: week
+mode: both
+title: Example project
+rows:
+  - label: Stage 1 - Plan
+    plan: [2026-09-07, 2026-09-12]
+    fact: [2026-09-07, 2026-09-14]
+    children:
+      - label: Collect requirements
+        plan: [2026-09-07, 2026-09-09]
+        fact: [2026-09-07, 2026-09-10]
+      - label: Write the spec
+        plan: [2026-09-10, 2026-09-12]
+        fact: [2026-09-11, 2026-09-14]
+  - label: Stage 2 - Build
+    plan: [2026-09-15, 2026-10-10]
+    fact: [2026-09-15]
+    notes: Still in progress - the bar runs to today.
+  - label: Stage 3 - Ship
+    plan: [2026-10-12, 2026-10-16]
+`;
+
+function example() {
+  const file = "Example Gantt.md";
+  if (!fs.existsSync(file)) return DEFAULT_EXAMPLE;
+  const m = R(file).match(/```gantt\n([\s\S]*?)```/);
+  return m ? m[1].replace(/\n$/, "") : DEFAULT_EXAMPLE;
+}
+
 const safe = (s) => s.replace(/<\/(script)/gi, "<\\/$1");
 const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -19,16 +49,21 @@ const html = `<!doctype html>
 <style>${R("app/app.css")}</style>
 </head><body>
 <header class="top"><b>Gantt</b>
-<button id="open">Open…</button><button id="save">Save YAML</button><button id="copy">Copy as Obsidian block</button><button id="example">Example</button>
+<button id="open" title="Open a .md note, a .yaml chart or any text file (Ctrl+O)">Open&hellip;</button>
+<button id="save" title="Save back to the file you opened (Ctrl+S)">Save</button>
+<button id="saveas" title="Save as a new .yaml chart or .md note (Ctrl+Shift+S)">Save as&hellip;</button>
+<button id="copy" title="Copy the chart as a gantt block, ready to paste into a note">Copy as Obsidian block</button>
+<button id="example">Example</button>
 <span id="file"></span><span class="sp"></span><button id="toggle">Hide editor</button></header>
 <main><section id="editorWrap"><textarea id="editor" spellcheck="false" aria-label="Gantt YAML"></textarea></section><section id="chart"></section></main>
-<input type="file" id="picker" accept=".yaml,.yml,.md,.txt" hidden><div id="toasts"></div>
+<input type="file" id="picker" accept=".yaml,.yml,.md,.markdown,.txt" hidden><div id="toasts"></div>
 <script>${safe(R("vendor/js-yaml.min.js"))}</script>
-<script>window.__GANTT_EXAMPLE__=${safe(JSON.stringify(example))};</script>
+<script>window.__GANTT_EXAMPLE__=${safe(JSON.stringify(example()))};</script>
 <script type="importmap">${JSON.stringify({ imports })}</script>
 <script type="module">import "gantt-shell";</script>
 </body></html>
 `;
 fs.mkdirSync("dist", { recursive: true });
 fs.writeFileSync("dist/Gantt.html", html);
-console.log(`dist/Gantt.html  ${(html.length / 1024).toFixed(0)} KB`);
+console.log(`dist/Gantt.html  ${(html.length / 1024).toFixed(0)} KB  (example: ${fs.existsSync("Example Gantt.md") ? "Example Gantt.md" : "built-in"})`);
+

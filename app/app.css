@@ -5,7 +5,10 @@ body{display:flex;flex-direction:column;background:#282828;color:#ebdbb2;font:14
 .top b{color:#fabd2f;font-size:15px;margin-right:6px}
 .top button{padding:5px 11px;border:1px solid #665c54;border-radius:4px;background:#3c3836;color:#ebdbb2;font:inherit;font-size:12px;cursor:pointer}
 .top button:hover{background:#504945}
-#file{color:#a89984;font-size:12px;margin-left:6px}.sp{flex:1}
+#file{color:#a89984;font-size:12px;margin-left:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:32ch}
+#file.is-dirty{color:#fbf1c7}
+#file.is-dirty::after{content:" \2022";color:#fabd2f}
+.sp{flex:1}
 main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(260px,380px) 1fr}
 .noeditor main{grid-template-columns:1fr}.noeditor #editorWrap{display:none}
 #editorWrap{border-right:1px solid #504945;display:flex}
@@ -19,3 +22,4 @@ main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(260px,380px) 
 .ctx button:hover{background:#504945}.ctx hr{border:0;border-top:1px solid #504945;margin:4px 0}
 @media (max-width:800px){main{grid-template-columns:1fr;grid-template-rows:190px 1fr}#editorWrap{border-right:0;border-bottom:1px solid #504945}}
 @media print{.top,#editorWrap,#toasts{display:none!important}html,body{height:auto;background:#fff}main{display:block}#chart{overflow:visible;padding:0}}
+

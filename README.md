@@ -11,8 +11,10 @@ You need Node.js LTS once, to bundle the plugin (no third-party chart library is
 
 **Any system:**
 ```
+
 npm install
 npm run build -- "/path/to/your/vault"
+
 ```
 
 Without the vault path, `npm run build` just produces `main.js`, `manifest.json` and `styles.css`.
@@ -24,8 +26,9 @@ Then in Obsidian: Settings > Community plugins > turn off Restricted mode > enab
 
 Put this in any note (see `Example Gantt.md`):
 
-````
-```gantt
+```
+
+```
 rows:
   - label: Stage 1 - Complete Initial Ideas
     plan: [2026-09-07, 2026-09-12]
@@ -35,7 +38,6 @@ rows:
         plan: [2026-09-07, 2026-09-10]
         fact: [2026-09-07, 2026-09-14]
 ```
-````
 
 Row keys: `label`, `plan`, `fact`, `children`, `notes`.
 `fact: [date]` with one date (no end) is drawn as a translucent **progress** bar from that date to today.
@@ -76,12 +78,28 @@ Optional keys next to `rows:`
 `dist/Gantt.html` is the whole thing in one file. Double-click it to run in any modern browser, offline, with nothing to install. It uses the plugin's own chart code, so the columns, print, export, tooltips and full screen behave identically.
 
 - **Editor + live chart:** type or paste the same YAML you'd put in a `gantt` block. The chart updates as you type and keeps your scale, mode and collapsed rows. A YAML mistake shows a message instead of breaking anything.
-- **Open…** reads a `.yaml` file, or an Obsidian `.md` note (the first `gantt` block is used). You can also drop a file on the window.
-- **Save YAML** downloads your chart. **Copy as Obsidian block** puts it on the clipboard wrapped in the `gantt` fence, ready to paste into a note. Ctrl/Cmd+S saves and Ctrl/Cmd+P prints.
+- **Open…** reads a `.yaml` file, or an Obsidian `.md` note (the first `gantt` block is used). You can also drop a file on the window. A note with no `gantt` block yet gets one added at the end, and the rest of the note is left untouched.
+- **Save** writes back to the file you opened, in the format it came from (see below). **Save as…** picks a new name or type. **Copy as Obsidian block** puts the YAML on the clipboard wrapped in the `gantt` fence, ready to paste into a note. Ctrl/Cmd+S saves, Ctrl/Cmd+Shift+S saves as, Ctrl/Cmd+O opens, Ctrl/Cmd+P prints.
 - Your work is kept automatically in the browser and comes back when you reopen the file. Table layout and export options are remembered too.
 - Exports are normal downloads (the browser decides where they go). "Save into the vault" simply downloads as well.
 
 To rebuild it after changing anything in `src/`: `npm run build:app` (no dependencies needed). To build the Obsidian plugin instead, use `npm run build` as before.
+
+### Saving
+
+Save writes back into the file the chart came from, keeping its format:
+
+| You opened | Save writes |
+| --- | --- |
+| a `.md` note | the **whole note**, with only the `gantt` block's YAML replaced. Frontmatter, other headings, other code blocks, everything after the chart — all untouched. |
+| a `.yaml` / `.yml` file | just the YAML, as before. |
+| a `.txt` or anything else | just the YAML, with the same extension. |
+
+- In Chrome and Edge (any Chromium browser), **Open…** and **Save** use the real file pickers, so Ctrl+S writes straight back to the file on disk — no download, no dialog after the first save. The file name in the header shows what will be written, with a **•** while there are unsaved changes.
+- In Firefox and Safari, which have no write access to files, **Save** downloads a file with the right name and extension instead. Reopening that download and saving again gives you the next version.
+- If a note holds several `gantt` blocks, the first one is loaded and only that one is rewritten; the others are left alone.
+- Charts that came from YAML and are saved as a `.md` get wrapped in a `gantt` fence, so they render straight away in Obsidian.
+- The **Example** button drops any link to the file you had open, so saving the example can never overwrite your own chart.
 
 ## Table columns
 
@@ -129,3 +147,4 @@ A chart that sets `columns:` or `table:` keeps exactly that layout; changes made
 ## How the chart is drawn
 
 The plugin draws the whole chart itself (table as HTML, timeline as SVG; print and export use a separate static SVG renderer that shares the same date-to-pixel geometry). Planned bars, actual bars, progress bars and the today line all use the same date-to-pixel function, so they always line up, and completed tasks are drawn exactly like any other task (striped actual bar over the planned bar). The chart opens scrolled to today; scroll left for the Progress / date columns.
+
