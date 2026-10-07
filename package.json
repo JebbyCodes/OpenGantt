@@ -1,0 +1,16 @@
+{
+  "name": "obsidian-gantt",
+  "version": "1.2.0",
+  "private": true,
+  "description": "Obsidian plugin: renders gantt code blocks as planned / actual / progress charts.",
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "test": "node test/model.test.mjs && node test/timeline.test.mjs && node test/columns.test.mjs && node test/export.test.mjs",
+    "build:app": "node build-app.mjs"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

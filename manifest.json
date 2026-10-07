@@ -1,0 +1,9 @@
+{
+  "id": "gantt",
+  "name": "OpenGantt",
+  "version": "1.2.0",
+  "minAppVersion": "1.0.0",
+  "description": "Gantt chart editor.",
+  "author": "JebbyCodes",
+  "isDesktopOnly": false
+}

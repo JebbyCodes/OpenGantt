@@ -1,0 +1,21 @@
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{display:flex;flex-direction:column;background:#282828;color:#ebdbb2;font:14px/1.4 Inter,"Segoe UI",system-ui,sans-serif}
+.top{display:flex;align-items:center;gap:8px;padding:8px 12px;background:#1d2021;border-bottom:1px solid #504945}
+.top b{color:#fabd2f;font-size:15px;margin-right:6px}
+.top button{padding:5px 11px;border:1px solid #665c54;border-radius:4px;background:#3c3836;color:#ebdbb2;font:inherit;font-size:12px;cursor:pointer}
+.top button:hover{background:#504945}
+#file{color:#a89984;font-size:12px;margin-left:6px}.sp{flex:1}
+main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(260px,380px) 1fr}
+.noeditor main{grid-template-columns:1fr}.noeditor #editorWrap{display:none}
+#editorWrap{border-right:1px solid #504945;display:flex}
+#editor{flex:1;width:100%;resize:none;border:0;outline:0;padding:12px;background:#1d2021;color:#ebdbb2;font:13px/1.5 ui-monospace,Consolas,Menlo,monospace;tab-size:2;white-space:pre}
+#chart{overflow:auto;padding:10px 14px}
+#chart .epq-gantt-host{height:calc(100vh - 215px)!important;min-height:300px}
+#toasts{position:fixed;right:14px;bottom:14px;display:flex;flex-direction:column;gap:6px;z-index:999}
+.toast{padding:8px 12px;border:1px solid #fabd2f;border-radius:6px;background:#32302f;color:#fbf1c7;font-size:12px;box-shadow:0 4px 14px #0008}
+.ctx{position:fixed;z-index:999;min-width:170px;padding:4px;border:1px solid #fabd2f;border-radius:6px;background:#282828;box-shadow:0 6px 20px #0009}
+.ctx button{display:block;width:100%;padding:6px 10px;border:0;background:none;color:#ebdbb2;font:inherit;font-size:12px;text-align:left;cursor:pointer;border-radius:3px}
+.ctx button:hover{background:#504945}.ctx hr{border:0;border-top:1px solid #504945;margin:4px 0}
+@media (max-width:800px){main{grid-template-columns:1fr;grid-template-rows:190px 1fr}#editorWrap{border-right:0;border-bottom:1px solid #504945}}
+@media print{.top,#editorWrap,#toasts{display:none!important}html,body{height:auto;background:#fff}main{display:block}#chart{overflow:visible;padding:0}}
