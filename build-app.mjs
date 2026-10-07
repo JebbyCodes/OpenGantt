@@ -42,10 +42,18 @@ function example() {
   return m ? m[1].replace(/\n$/, "") : DEFAULT_EXAMPLE;
 }
 
+// Favicon: a logo.png in the project root is embedded as a data URI, so dist/Gantt.html stays one
+// self-contained file - no separate image to lose and no network request. The very same logo.png is what
+// `npx tauri icon logo.png` turns into the desktop app's icons, so there is only one image to keep.
+let icon = "";
+if (fs.existsSync("logo.png")) {
+  icon = `<link rel="icon" type="image/png" href="data:image/png;base64,${fs.readFileSync("logo.png").toString("base64")}">`;
+}
+
 const safe = (s) => s.replace(/<\/(script)/gi, "<\\/$1");
 const html = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Gantt</title>
+<title>Gantt</title>${icon}
 <style>${R("app/app.css")}</style>
 </head><body>
 <header class="top"><b>Gantt</b>
@@ -66,4 +74,4 @@ const html = `<!doctype html>
 fs.mkdirSync("dist", { recursive: true });
 fs.writeFileSync("dist/Gantt.html", html);
 console.log(`dist/Gantt.html  ${(html.length / 1024).toFixed(0)} KB  (example: ${fs.existsSync("Example Gantt.md") ? "Example Gantt.md" : "built-in"})`);
-
+console.log(icon ? "favicon: logo.png embedded" : "favicon: none (drop a logo.png in the project root to add one)");
