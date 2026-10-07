@@ -1,0 +1,50 @@
+# ---------------------------------------------------------------------------
+# OpenGantt
+# ---------------------------------------------------------------------------
+# Note: dist/Gantt.html is the BUILT standalone app and is committed on purpose,
+# so it is deliberately not ignored. Everything below is generated or machine-local.
+
+# --- Dependencies ----------------------------------------------------------
+node_modules/
+.pnpm-store/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Obsidian plugin build (from esbuild.mjs) ------------------------------
+# These land in the repo root. dist/Gantt.html is the standalone build and is kept.
+/main.js
+/main.css
+/styles.css
+
+# --- Tauri / Rust ----------------------------------------------------------
+# The whole compiled tree. Keep Cargo.lock: this is an application, not a library.
+src-tauri/target/
+src-tauri/gen/schemas/
+
+# --- Standalone .exe copied out by build-exe.ps1 ---------------------------
+dist-exe/
+*.exe
+*.msi
+*.nsis.zip
+
+# --- Environment -----------------------------------------------------------
+.env
+.env.*
+!.env.example
+
+# --- Editors ---------------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS --------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Logs and temp ---------------------------------------------------------
