@@ -1,11 +1,25 @@
 # OpenGantt
 
+> **Made with AI.** This project was built entirely with AI assistance. Every line of code, this README, and the design of the chart were produced in collaboration with a large language model. It is shared as-is for anyone who finds it useful.
+
 Draws Gantt charts from a small, readable YAML block — planned bars, actual bars and live progress, on one
 timeline. It runs as a single HTML file you can double-click, and as a plugin inside Obsidian. Both share
 the same chart code, so the columns, tooltips, print and export behave identically.
 
 The YAML is the whole document: searchable, diffable, and easy to keep in version control next to whatever
 it describes.
+
+## Built with ts-gantt
+
+OpenGantt is built on top of [ts-gantt](https://github.com/yermolim/ts-gantt), a simple TypeScript library
+for creating Gantt charts combined with a task grid. The library is MIT-licensed and provides the core
+rendering engine: a two-part layout (task grid + timeline), tree-like expandable rows, planned/actual date
+pairs, and four chart scales (day, week, month, year). OpenGantt takes that foundation and wraps it in a
+YAML-driven editor, an Obsidian plugin, a standalone HTML file, and a print/export pipeline.
+
+The chart's dark Gruvbox theme, the column system, the tooltip, and the print renderer are OpenGantt's own;
+the underlying chart geometry, bar drawing, and scale switching come from ts-gantt. If you want to build
+something similar, ts-gantt is the place to start.
 
 ## Quick start
 
@@ -15,7 +29,7 @@ Open `dist/Gantt.html` in any modern browser. No install, no network, no build s
   scale, mode and collapsed rows. A YAML mistake shows a message instead of breaking anything.
 - **Open…** reads a `.md` note, a `.yaml` chart, or any text file. You can also drop a file on the window.
 - **Save** writes back into the file you opened, in the format it came from. **Save as…** picks a new name
-  or type. **Copy as Obsidian block** puts the YAML on the clipboard wrapped in a `` ```gantt `` fence,
+  or type. **Copy as Obsidian block** puts the YAML on the clipboard wrapped in a ````gantt` fence,
   ready to paste into a note.
 - Ctrl/Cmd+S saves, Ctrl/Cmd+Shift+S saves as, Ctrl/Cmd+O opens, Ctrl/Cmd+P prints.
 - Your work is kept automatically in the browser and comes back when you reopen the file. Table layout and
@@ -77,12 +91,11 @@ Hover a bar to see the task name, planned and actual dates, durations, progress 
 
 Save writes back into the file the chart came from, keeping its format:
 
-| You opened ↕▾ | Save writes ↕▾ |
+| You opened | Save writes |
 |---|---|
-| −a `.md` note | the **whole note**, with only the `gantt` block's YAML replaced. Frontmatter, other headings, other code blocks, everything after the chart — all untouched. |
+| a `.md` note | the **whole note**, with only the `gantt` block's YAML replaced. Frontmatter, other headings, other code blocks, everything after the chart — all untouched. |
 | a `.yaml` / `.yml` file | just the YAML. |
 | a `.txt` or anything else | just the YAML, with the same extension. |
-⚙
 
 - In Chrome and Edge (any Chromium browser), **Open…** and **Save** use the real file pickers, so Ctrl+S
 writes straight back to the file on disk — no download, no dialog after the first save. The file name in
@@ -112,15 +125,16 @@ together.
 
 Columns you can add, beyond the five shown by default:
 
-| Column | Shows | `columns:` name |
+| Column ↕▾ | Shows ↕▾ | `columns:` name ↕▾ |
 |---|---|---|
-| Progress | % of the plan elapsed | `progress` |
-| Start planned / End planned | planned dates | `planStart` / `planEnd` |
-| Start actual / End actual | actual dates (`ongoing` while open) | `actualStart` / `actualEnd` |
+| −Progress | % of the plan elapsed | `progress` |
+| −Start planned / End planned | planned dates | `planStart` / `planEnd` |
+| −Start actual / End actual | actual dates (`ongoing` while open) | `actualStart` / `actualEnd` |
 | Planned days / Actual days | length in days, counting both end days | `planDays` / `actualDays` |
 | Variance | days late (`+3 d`) or early (`−2 d`) against the planned end; for an unfinished task past its planned end, days overdue so far | `variance` |
 | Status | Not started, In progress, Overdue, Completed, Completed late (coloured like the task name) | `status` |
 | Notes | the task's `notes` | `notes` |
+⚙
 
 **Your own columns:** any extra key on a task becomes a column, with the key as its heading.
 
@@ -208,9 +222,9 @@ for the Progress / date columns.
 | Path ↕▾ | What it is ↕▾ |
 |---|---|
 | −`app/` | the standalone app's shell (toolbar, editor, open/save) and a small shim for the browser |
-| `src/` | the chart itself: model, timeline, columns, chart, export |
-| `vendor/` | a copy of js-yaml, so the standalone file needs no network |
-| `dist/Gantt.html` | the built standalone app — the file you double-click |
+| −`src/` | the chart itself: model, timeline, columns, chart, export |
+| −`vendor/` | a copy of js-yaml, so the standalone file needs no network |
+| −`dist/Gantt.html` | the built standalone app — the file you double-click |
 | `build-app.mjs` | builds `dist/Gantt.html` from `app/` and `src/` |
 | `esbuild.mjs` | builds the Obsidian plugin (`main.js`, `styles.css`) from `src/` |
 | `test/` | Node tests for the model, timeline, columns and export |
@@ -218,5 +232,7 @@ for the Progress / date columns.
 
 ## License
 
-Released into the public domain under the [Unlicense](https://license/).
+Released into the public domain under the [Unlicense](https://unlicense.org/).
+
+The underlying [ts-gantt](https://github.com/yermolim/ts-gantt) library is MIT-licensed.
 

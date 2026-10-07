@@ -8,8 +8,8 @@
   --tsg-border-color: #7c6f64;
   --tsg-symbol-color: #fbf1c7;
   --tsg-selection-color: #665c54;
-  --tsg-scrollbar-track-color: #1d2021;
-  --tsg-scrollbar-thumb-color: #928374;
+  --tsg-scrollbar-track-color: transparent;
+  --tsg-scrollbar-thumb-color: #3c3836;
   --tsg-not-started-fg-color: #d5c4a1;
   --tsg-in-progress-fg-color: #fabd2f;
   --tsg-overdue-fg-color: #ff6b5a;
@@ -123,6 +123,15 @@
 .epq-chart { position: absolute; inset: 0; overflow: auto; background: var(--tsg-background-color); color: var(--tsg-foreground-color); font-family: var(--tsg-font-family); font-size: 13px; }
 .epq-inner { position: relative; min-height: 100%; }
 
+/* Scrollbars blend into the Gruvbox background: a faint thumb on a transparent track, firmer on hover. */
+.epq-chart { scrollbar-width: thin; scrollbar-color: var(--tsg-scrollbar-thumb-color) var(--tsg-scrollbar-track-color); }
+.epq-chart::-webkit-scrollbar { width: 10px; height: 10px; }
+.epq-chart::-webkit-scrollbar-track { background: transparent; }
+.epq-chart::-webkit-scrollbar-thumb { background: #3c3836; background-clip: content-box; border: 2px solid transparent; border-radius: 6px; }
+.epq-chart:hover::-webkit-scrollbar-thumb { background: #504945; background-clip: content-box; }
+.epq-chart::-webkit-scrollbar-thumb:hover { background: #665c54; background-clip: content-box; }
+.epq-chart::-webkit-scrollbar-corner { background: transparent; }
+
 .epq-head { display: flex; position: sticky; top: 0; z-index: 6; background: var(--tsg-header-color); border-bottom: 1px solid var(--tsg-border-color); }
 .epq-hcell { box-sizing: border-box; flex: 0 0 auto; display: flex; align-items: center; padding: 0 10px; font-weight: 600; color: #fbf1c7; border-right: 1px solid var(--tsg-separator-color); white-space: nowrap; }
 .epq-nh { position: sticky; left: 0; z-index: 7; background: var(--tsg-header-color); }
@@ -211,7 +220,13 @@
   font-size: 12px;
   line-height: 1.4;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.55);
+  scrollbar-width: thin;
+  scrollbar-color: var(--tsg-scrollbar-thumb-color) var(--tsg-scrollbar-track-color);
 }
+.epq-gantt-popover::-webkit-scrollbar { width: 10px; height: 10px; }
+.epq-gantt-popover::-webkit-scrollbar-track { background: transparent; }
+.epq-gantt-popover::-webkit-scrollbar-thumb { background: #3c3836; background-clip: content-box; border: 2px solid transparent; border-radius: 6px; }
+.epq-gantt-popover:hover::-webkit-scrollbar-thumb { background: #504945; background-clip: content-box; }
 .epq-gantt-popover button {
   height: auto;
   padding: 3px 9px;
