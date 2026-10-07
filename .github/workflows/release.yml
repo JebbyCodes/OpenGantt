@@ -17,7 +17,6 @@ jobs:
       # ------------------------------------------------------------
       # Checkout
       # ------------------------------------------------------------
-
       - name: Check out tagged commit
         uses: actions/checkout@v4
         with:
@@ -26,7 +25,6 @@ jobs:
       # ------------------------------------------------------------
       # Node.js
       # ------------------------------------------------------------
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -36,7 +34,6 @@ jobs:
       # ------------------------------------------------------------
       # Rust / Tauri
       # ------------------------------------------------------------
-
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -48,45 +45,78 @@ jobs:
       # ------------------------------------------------------------
       # Dependencies
       # ------------------------------------------------------------
-
       - name: Install dependencies
         run: npm ci
 
       # ------------------------------------------------------------
-      # Make sure the release tag and application versions agree
+      # Version
+      #
+      # package.json is the SINGLE source of truth.
+      #
+      # Example:
+      #   package.json       -> 1.2.3
+      #   GitHub tag         -> v1.2.3
+      #   Tauri config       -> automatically changed to 1.2.3
+      #
+      # The Tauri change only happens on the CI runner and is NOT
+      # committed back to the repository.
       # ------------------------------------------------------------
-
-      - name: Validate release version
+      - name: Validate and synchronise release version
         shell: pwsh
         run: |
           $tagVersion = "${env:GITHUB_REF_NAME}" -replace '^v', ''
-
           $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          $tauriVersion = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
 
-          Write-Host "Release tag:     $tagVersion"
-          Write-Host "package.json:    $packageVersion"
-          Write-Host "tauri.conf.json: $tauriVersion"
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "OpenGantt Release Version"
+          Write-Host "========================================"
+          Write-Host "Git tag:       v$tagVersion"
+          Write-Host "package.json:  $packageVersion"
+          Write-Host ""
 
+          # The Git tag must match package.json.
           if ($tagVersion -ne $packageVersion) {
             throw "Release tag v$tagVersion does not match package.json version $packageVersion."
           }
 
-          if ($tagVersion -ne $tauriVersion) {
-            throw "Release tag v$tagVersion does not match src-tauri/tauri.conf.json version $tauriVersion."
+          # Load Tauri configuration.
+          $tauriPath = "src-tauri/tauri.conf.json"
+
+          if (-not (Test-Path $tauriPath)) {
+            throw "Tauri configuration not found: $tauriPath"
           }
+
+          $tauri = Get-Content $tauriPath -Raw | ConvertFrom-Json
+
+          # Synchronise Tauri version with package.json.
+          $tauri.version = $packageVersion
+
+          # Write it back to the CI workspace.
+          $tauri | ConvertTo-Json -Depth 100 | Set-Content $tauriPath -Encoding UTF8
+
+          # Verify the result.
+          $syncedVersion = (Get-Content $tauriPath -Raw | ConvertFrom-Json).version
+
+          Write-Host "Tauri version:  $syncedVersion"
+          Write-Host ""
+
+          if ($syncedVersion -ne $packageVersion) {
+            throw "Failed to synchronise Tauri version."
+          }
+
+          Write-Host "Version check passed."
+          Write-Host "All release components will use version $packageVersion."
 
       # ------------------------------------------------------------
       # Tests
       # ------------------------------------------------------------
-
       - name: Run tests
         run: npm test
 
       # ------------------------------------------------------------
       # Standalone application
       # ------------------------------------------------------------
-
       - name: Build standalone application
         run: npm run build:app
 
@@ -104,10 +134,11 @@ jobs:
             -DestinationPath "release-assets/OpenGantt-${env:GITHUB_REF_NAME}-standalone.zip" `
             -CompressionLevel Optimal
 
+          Write-Host "Standalone package created."
+
       # ------------------------------------------------------------
       # Obsidian plugin
       # ------------------------------------------------------------
-
       - name: Build Obsidian plugin
         run: npm run build
 
@@ -141,17 +172,17 @@ jobs:
 
           Remove-Item $pluginDir -Recurse -Force
 
+          Write-Host "Obsidian plugin package created."
+
       # ------------------------------------------------------------
       # Tauri desktop application
       # ------------------------------------------------------------
-
       - name: Build Tauri Windows application
         run: npx tauri build
 
       # ------------------------------------------------------------
       # Collect Tauri installers
       # ------------------------------------------------------------
-
       - name: Collect Windows installers
         shell: pwsh
         run: |
@@ -170,6 +201,8 @@ jobs:
             throw "No Windows MSI or EXE installers were produced."
           }
 
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+
           foreach ($file in $files) {
             Copy-Item $file.FullName "release-assets/$($file.Name)"
             Write-Host "Collected: $($file.Name)"
@@ -178,7 +211,6 @@ jobs:
       # ------------------------------------------------------------
       # Show everything that will be released
       # ------------------------------------------------------------
-
       - name: List release assets
         shell: pwsh
         run: |
@@ -195,7 +227,6 @@ jobs:
       # ------------------------------------------------------------
       # Create GitHub Release
       # ------------------------------------------------------------
-
       - name: Create GitHub Release
         shell: bash
         env:
