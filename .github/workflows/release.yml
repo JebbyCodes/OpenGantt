@@ -3,14 +3,14 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - "[0-9]+.[0-9]+.[0-9]+"
 
 permissions:
   contents: write
 
 jobs:
   release:
-    name: Build and publish Windows release
+    name: Build and publish release
     runs-on: windows-latest
 
     steps:
@@ -49,38 +49,69 @@ jobs:
         run: npm ci
 
       # ------------------------------------------------------------
-      # Version
+      # Version validation
       #
-      # package.json is the SINGLE source of truth.
+      # package.json and manifest.json must contain the same version.
+      # The GitHub release tag must also match that version exactly.
       #
       # Example:
-      #   package.json       -> 1.2.3
-      #   GitHub tag         -> v1.2.3
-      #   Tauri config       -> automatically changed to 1.2.3
-      #
-      # The Tauri change only happens on the CI runner and is NOT
-      # committed back to the repository.
+      #   package.json  -> 1.2.3
+      #   manifest.json  -> 1.2.3
+      #   GitHub tag     -> 1.2.3
       # ------------------------------------------------------------
-      - name: Validate and synchronise release version
+      - name: Validate release version
         shell: pwsh
         run: |
-          $tagVersion = "${env:GITHUB_REF_NAME}" -replace '^v', ''
-          $packageVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $tagVersion = "${env:GITHUB_REF_NAME}"
+
+          $packageVersion = (
+            Get-Content "package.json" -Raw |
+            ConvertFrom-Json
+          ).version
+
+          $manifestVersion = (
+            Get-Content "manifest.json" -Raw |
+            ConvertFrom-Json
+          ).version
 
           Write-Host ""
           Write-Host "========================================"
           Write-Host "OpenGantt Release Version"
           Write-Host "========================================"
-          Write-Host "Git tag:       v$tagVersion"
-          Write-Host "package.json:  $packageVersion"
+          Write-Host "Git tag:        $tagVersion"
+          Write-Host "package.json:   $packageVersion"
+          Write-Host "manifest.json:  $manifestVersion"
           Write-Host ""
 
-          # The Git tag must match package.json.
           if ($tagVersion -ne $packageVersion) {
-            throw "Release tag v$tagVersion does not match package.json version $packageVersion."
+            throw "Git tag $tagVersion does not match package.json version $packageVersion."
           }
 
-          # Load Tauri configuration.
+          if ($tagVersion -ne $manifestVersion) {
+            throw "Git tag $tagVersion does not match manifest.json version $manifestVersion."
+          }
+
+          if ($packageVersion -ne $manifestVersion) {
+            throw "package.json version $packageVersion does not match manifest.json version $manifestVersion."
+          }
+
+          Write-Host "Version check passed."
+          Write-Host "Release version: $tagVersion"
+
+      # ------------------------------------------------------------
+      # Synchronise Tauri version
+      #
+      # This modifies tauri.conf.json ONLY inside the CI workspace.
+      # It is NOT committed back to Git.
+      # ------------------------------------------------------------
+      - name: Synchronise Tauri version
+        shell: pwsh
+        run: |
+          $packageVersion = (
+            Get-Content "package.json" -Raw |
+            ConvertFrom-Json
+          ).version
+
           $tauriPath = "src-tauri/tauri.conf.json"
 
           if (-not (Test-Path $tauriPath)) {
@@ -89,24 +120,22 @@ jobs:
 
           $tauri = Get-Content $tauriPath -Raw | ConvertFrom-Json
 
-          # Synchronise Tauri version with package.json.
           $tauri.version = $packageVersion
 
-          # Write it back to the CI workspace.
-          $tauri | ConvertTo-Json -Depth 100 | Set-Content $tauriPath -Encoding UTF8
+          $tauri |
+            ConvertTo-Json -Depth 100 |
+            Set-Content $tauriPath -Encoding UTF8
 
-          # Verify the result.
-          $syncedVersion = (Get-Content $tauriPath -Raw | ConvertFrom-Json).version
+          $syncedVersion = (
+            Get-Content $tauriPath -Raw |
+            ConvertFrom-Json
+          ).version
 
-          Write-Host "Tauri version:  $syncedVersion"
-          Write-Host ""
+          Write-Host "Tauri version: $syncedVersion"
 
           if ($syncedVersion -ne $packageVersion) {
             throw "Failed to synchronise Tauri version."
           }
-
-          Write-Host "Version check passed."
-          Write-Host "All release components will use version $packageVersion."
 
       # ------------------------------------------------------------
       # Tests
@@ -115,15 +144,22 @@ jobs:
         run: npm test
 
       # ------------------------------------------------------------
-      # Standalone application
+      # Build standalone application
       # ------------------------------------------------------------
       - name: Build standalone application
         run: npm run build:app
 
+      # ------------------------------------------------------------
+      # Package standalone application
+      # ------------------------------------------------------------
       - name: Package standalone application
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path "release-assets" |
+            Out-Null
 
           if (-not (Test-Path "dist/Gantt.html")) {
             throw "dist/Gantt.html was not created by the standalone build."
@@ -137,45 +173,82 @@ jobs:
           Write-Host "Standalone package created."
 
       # ------------------------------------------------------------
-      # Obsidian plugin
+      # Build Obsidian plugin
+      #
+      # The Obsidian Community Directory expects:
+      #   main.js
+      #   manifest.json
+      #   styles.css
+      #
+      # These are uploaded as individual release assets below.
       # ------------------------------------------------------------
       - name: Build Obsidian plugin
         run: npm run build
 
-      - name: Package Obsidian plugin
+      # ------------------------------------------------------------
+      # Prepare Obsidian release assets
+      # ------------------------------------------------------------
+      - name: Prepare Obsidian release assets
         shell: pwsh
         run: |
-          $pluginDir = "release-assets/OpenGantt-${env:GITHUB_REF_NAME}-Obsidian"
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path "release-assets" |
+            Out-Null
 
-          New-Item -ItemType Directory -Force -Path $pluginDir | Out-Null
-
+          # main.js
           if (-not (Test-Path "main.js")) {
             throw "main.js was not created by the Obsidian build."
           }
 
+          # manifest.json
           if (-not (Test-Path "manifest.json")) {
             throw "manifest.json is missing."
           }
 
+          # styles.css
           if (-not (Test-Path "styles.css")) {
-            throw "styles.css is missing."
+            throw "styles.css was not created by the Obsidian build."
           }
 
-          Copy-Item "main.js" "$pluginDir/"
-          Copy-Item "manifest.json" "$pluginDir/"
-          Copy-Item "styles.css" "$pluginDir/"
+          # Copy the files directly into release-assets.
+          # DO NOT put them inside a ZIP.
+          Copy-Item `
+            "main.js" `
+            "release-assets/main.js" `
+            -Force
 
-          Compress-Archive `
-            -Path "$pluginDir/*" `
-            -DestinationPath "release-assets/OpenGantt-${env:GITHUB_REF_NAME}-Obsidian.zip" `
-            -CompressionLevel Optimal
+          Copy-Item `
+            "manifest.json" `
+            "release-assets/manifest.json" `
+            -Force
 
-          Remove-Item $pluginDir -Recurse -Force
+          Copy-Item `
+            "styles.css" `
+            "release-assets/styles.css" `
+            -Force
 
-          Write-Host "Obsidian plugin package created."
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "Obsidian release assets"
+          Write-Host "========================================"
+          Write-Host ""
+
+          Get-ChildItem "release-assets/main.js" |
+            Select-Object Name, Length |
+            Format-Table -AutoSize
+
+          Get-ChildItem "release-assets/manifest.json" |
+            Select-Object Name, Length |
+            Format-Table -AutoSize
+
+          Get-ChildItem "release-assets/styles.css" |
+            Select-Object Name, Length |
+            Format-Table -AutoSize
 
       # ------------------------------------------------------------
-      # Tauri desktop application
+      # Build Tauri desktop application
       # ------------------------------------------------------------
       - name: Build Tauri Windows application
         run: npx tauri build
@@ -192,7 +265,10 @@ jobs:
             throw "Tauri bundle directory was not created: $bundleDir"
           }
 
-          $files = Get-ChildItem $bundleDir -Recurse -File |
+          $files = Get-ChildItem `
+            $bundleDir `
+            -Recurse `
+            -File |
             Where-Object {
               $_.Extension -in @(".msi", ".exe")
             }
@@ -201,28 +277,67 @@ jobs:
             throw "No Windows MSI or EXE installers were produced."
           }
 
-          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          New-Item `
+            -ItemType Directory `
+            -Force `
+            -Path "release-assets" |
+            Out-Null
 
           foreach ($file in $files) {
-            Copy-Item $file.FullName "release-assets/$($file.Name)"
+            Copy-Item `
+              $file.FullName `
+              "release-assets/$($file.Name)" `
+              -Force
+
             Write-Host "Collected: $($file.Name)"
           }
 
       # ------------------------------------------------------------
-      # Show everything that will be released
+      # Verify final release assets
       # ------------------------------------------------------------
-      - name: List release assets
+      - name: Verify release assets
         shell: pwsh
         run: |
           Write-Host ""
           Write-Host "========================================"
-          Write-Host "Release assets"
+          Write-Host "Final release assets"
           Write-Host "========================================"
           Write-Host ""
 
           Get-ChildItem "release-assets" -File |
             Select-Object Name, Length |
             Format-Table -AutoSize
+
+          Write-Host ""
+
+          # Required Obsidian assets
+          $requiredAssets = @(
+            "main.js",
+            "manifest.json",
+            "styles.css"
+          )
+
+          foreach ($asset in $requiredAssets) {
+            $path = Join-Path "release-assets" $asset
+
+            if (-not (Test-Path $path)) {
+              throw "Required Obsidian release asset is missing: $asset"
+            }
+          }
+
+          # Verify manifest version one final time.
+          $manifest = Get-Content `
+            "release-assets/manifest.json" `
+            -Raw |
+            ConvertFrom-Json
+
+          if ($manifest.version -ne "${env:GITHUB_REF_NAME}") {
+            throw "Release manifest version $($manifest.version) does not match Git tag ${env:GITHUB_REF_NAME}."
+          }
+
+          Write-Host "All required Obsidian release assets are present."
+          Write-Host "Manifest version matches release tag."
+          Write-Host "Release verification passed."
 
       # ------------------------------------------------------------
       # Create GitHub Release
