@@ -7,6 +7,9 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
 
 jobs:
   release:
@@ -55,9 +58,9 @@ jobs:
       # The GitHub release tag must also match that version exactly.
       #
       # Example:
-      #   package.json  -> 1.2.3
-      #   manifest.json  -> 1.2.3
-      #   GitHub tag     -> 1.2.3
+      #   package.json  -> 1.2.5
+      #   manifest.json  -> 1.2.5
+      #   GitHub tag     -> 1.2.5
       # ------------------------------------------------------------
       - name: Validate release version
         shell: pwsh
@@ -180,7 +183,7 @@ jobs:
       #   manifest.json
       #   styles.css
       #
-      # These are uploaded as individual release assets below.
+      # These are uploaded as individual release assets.
       # ------------------------------------------------------------
       - name: Build Obsidian plugin
         run: npm run build
@@ -254,7 +257,7 @@ jobs:
         run: npx tauri build
 
       # ------------------------------------------------------------
-      # Collect Tauri installers
+      # Collect Windows installers
       # ------------------------------------------------------------
       - name: Collect Windows installers
         shell: pwsh
@@ -304,13 +307,21 @@ jobs:
           Write-Host "========================================"
           Write-Host ""
 
-          Get-ChildItem "release-assets" -File |
+          $assets = Get-ChildItem "release-assets" -File
+
+          if ($assets.Count -eq 0) {
+            throw "No release assets were created."
+          }
+
+          $assets |
             Select-Object Name, Length |
             Format-Table -AutoSize
 
           Write-Host ""
 
+          # --------------------------------------------------------
           # Required Obsidian assets
+          # --------------------------------------------------------
           $requiredAssets = @(
             "main.js",
             "manifest.json",
@@ -323,9 +334,19 @@ jobs:
             if (-not (Test-Path $path)) {
               throw "Required Obsidian release asset is missing: $asset"
             }
+
+            $item = Get-Item $path
+
+            if ($item.Length -eq 0) {
+              throw "Required release asset is empty: $asset"
+            }
+
+            Write-Host "Verified required asset: $asset"
           }
 
-          # Verify manifest version one final time.
+          # --------------------------------------------------------
+          # Verify manifest version one final time
+          # --------------------------------------------------------
           $manifest = Get-Content `
             "release-assets/manifest.json" `
             -Raw |
@@ -335,12 +356,84 @@ jobs:
             throw "Release manifest version $($manifest.version) does not match Git tag ${env:GITHUB_REF_NAME}."
           }
 
+          Write-Host ""
           Write-Host "All required Obsidian release assets are present."
           Write-Host "Manifest version matches release tag."
-          Write-Host "Release verification passed."
+          Write-Host "Release asset verification passed."
+
+      # ------------------------------------------------------------
+      # Generate GitHub artifact attestations
+      #
+      # Every file in release-assets is attested:
+      #
+      #   main.js
+      #   manifest.json
+      #   styles.css
+      #   standalone ZIP
+      #   EXE
+      #   MSI
+      #
+      # actions/attest generates signed SLSA build provenance.
+      # ------------------------------------------------------------
+      - name: Generate artifact attestations
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            release-assets/*
+
+      # ------------------------------------------------------------
+      # Verify GitHub artifact attestations
+      #
+      # Every release asset must have a valid attestation before
+      # the GitHub Release is created.
+      # ------------------------------------------------------------
+      - name: Verify artifact attestations
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $repository = "${env:GITHUB_REPOSITORY}"
+
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "Verifying artifact attestations"
+          Write-Host "========================================"
+          Write-Host ""
+
+          $assets = Get-ChildItem "release-assets" -File
+
+          if ($assets.Count -eq 0) {
+            throw "No release assets found to verify."
+          }
+
+          foreach ($asset in $assets) {
+            Write-Host "Verifying: $($asset.Name)"
+
+            gh attestation verify `
+              "$($asset.FullName)" `
+              --repo "$repository"
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "Artifact attestation verification failed for $($asset.Name)."
+            }
+
+            Write-Host "PASSED: $($asset.Name)"
+            Write-Host ""
+          }
+
+          Write-Host "========================================"
+          Write-Host "All artifact attestations verified."
+          Write-Host "========================================"
 
       # ------------------------------------------------------------
       # Create GitHub Release
+      #
+      # This happens ONLY after:
+      #   1. Builds succeed
+      #   2. Required Obsidian files are verified
+      #   3. Versions are verified
+      #   4. All release assets have attestations
+      #   5. All attestations have been cryptographically verified
       # ------------------------------------------------------------
       - name: Create GitHub Release
         shell: bash
