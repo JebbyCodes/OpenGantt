@@ -3,7 +3,14 @@ name: Release
 on:
   push:
     tags:
-      - "[0-9]+.[0-9]+.[0-9]+"
+      - "v*"
+
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (for example 1.2.10)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -16,11 +23,15 @@ jobs:
     name: Build and publish release
     runs-on: windows-latest
 
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+
     steps:
       # ------------------------------------------------------------
       # Checkout
       # ------------------------------------------------------------
-      - name: Check out tagged commit
+
+      - name: Check out source
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -28,6 +39,7 @@ jobs:
       # ------------------------------------------------------------
       # Node.js
       # ------------------------------------------------------------
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -37,6 +49,7 @@ jobs:
       # ------------------------------------------------------------
       # Rust / Tauri
       # ------------------------------------------------------------
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -48,24 +61,34 @@ jobs:
       # ------------------------------------------------------------
       # Dependencies
       # ------------------------------------------------------------
+
       - name: Install dependencies
         run: npm ci
 
       # ------------------------------------------------------------
       # Version validation
       #
-      # package.json and manifest.json must contain the same version.
-      # The GitHub release tag must also match that version exactly.
+      # package.json and manifest.json contain:
       #
-      # Example:
-      #   package.json  -> 1.2.5
-      #   manifest.json  -> 1.2.5
-      #   GitHub tag     -> 1.2.5
+      #   1.2.10
+      #
+      # The Git tag contains:
+      #
+      #   v1.2.10
+      #
+      # For manual runs, the tag is generated from the entered version.
       # ------------------------------------------------------------
+
       - name: Validate release version
         shell: pwsh
         run: |
-          $tagVersion = "${env:GITHUB_REF_NAME}"
+          $tagName = "${env:RELEASE_TAG}"
+
+          if ($tagName -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "Invalid release tag '$tagName'. Expected format: vMAJOR.MINOR.PATCH (for example v1.2.10)."
+          }
+
+          $releaseVersion = $tagName.Substring(1)
 
           $packageVersion = (
             Get-Content "package.json" -Raw |
@@ -81,17 +104,19 @@ jobs:
           Write-Host "========================================"
           Write-Host "OpenGantt Release Version"
           Write-Host "========================================"
-          Write-Host "Git tag:        $tagVersion"
-          Write-Host "package.json:   $packageVersion"
-          Write-Host "manifest.json:  $manifestVersion"
+          Write-Host "Git tag:         $tagName"
+          Write-Host "Release version: $releaseVersion"
+          Write-Host "package.json:    $packageVersion"
+          Write-Host "manifest.json:   $manifestVersion"
+          Write-Host "Trigger:         ${{ github.event_name }}"
           Write-Host ""
 
-          if ($tagVersion -ne $packageVersion) {
-            throw "Git tag $tagVersion does not match package.json version $packageVersion."
+          if ($releaseVersion -ne $packageVersion) {
+            throw "Release tag $tagName does not match package.json version $packageVersion."
           }
 
-          if ($tagVersion -ne $manifestVersion) {
-            throw "Git tag $tagVersion does not match manifest.json version $manifestVersion."
+          if ($releaseVersion -ne $manifestVersion) {
+            throw "Release tag $tagName does not match manifest.json version $manifestVersion."
           }
 
           if ($packageVersion -ne $manifestVersion) {
@@ -99,7 +124,7 @@ jobs:
           }
 
           Write-Host "Version check passed."
-          Write-Host "Release version: $tagVersion"
+          Write-Host "Release version: $releaseVersion"
 
       # ------------------------------------------------------------
       # Synchronise Tauri version
@@ -107,6 +132,7 @@ jobs:
       # This modifies tauri.conf.json ONLY inside the CI workspace.
       # It is NOT committed back to Git.
       # ------------------------------------------------------------
+
       - name: Synchronise Tauri version
         shell: pwsh
         run: |
@@ -143,18 +169,21 @@ jobs:
       # ------------------------------------------------------------
       # Tests
       # ------------------------------------------------------------
+
       - name: Run tests
         run: npm test
 
       # ------------------------------------------------------------
       # Build standalone application
       # ------------------------------------------------------------
+
       - name: Build standalone application
         run: npm run build:app
 
       # ------------------------------------------------------------
       # Package standalone application
       # ------------------------------------------------------------
+
       - name: Package standalone application
         shell: pwsh
         run: |
@@ -170,7 +199,7 @@ jobs:
 
           Compress-Archive `
             -Path "dist/Gantt.html" `
-            -DestinationPath "release-assets/OpenGantt-${env:GITHUB_REF_NAME}-standalone.zip" `
+            -DestinationPath "release-assets/OpenGantt-${env:RELEASE_TAG}-standalone.zip" `
             -CompressionLevel Optimal
 
           Write-Host "Standalone package created."
@@ -179,18 +208,21 @@ jobs:
       # Build Obsidian plugin
       #
       # The Obsidian Community Directory expects:
+      #
       #   main.js
       #   manifest.json
       #   styles.css
       #
       # These are uploaded as individual release assets.
       # ------------------------------------------------------------
+
       - name: Build Obsidian plugin
         run: npm run build
 
       # ------------------------------------------------------------
       # Prepare Obsidian release assets
       # ------------------------------------------------------------
+
       - name: Prepare Obsidian release assets
         shell: pwsh
         run: |
@@ -200,23 +232,18 @@ jobs:
             -Path "release-assets" |
             Out-Null
 
-          # main.js
           if (-not (Test-Path "main.js")) {
             throw "main.js was not created by the Obsidian build."
           }
 
-          # manifest.json
           if (-not (Test-Path "manifest.json")) {
             throw "manifest.json is missing."
           }
 
-          # styles.css
           if (-not (Test-Path "styles.css")) {
             throw "styles.css was not created by the Obsidian build."
           }
 
-          # Copy the files directly into release-assets.
-          # DO NOT put them inside a ZIP.
           Copy-Item `
             "main.js" `
             "release-assets/main.js" `
@@ -253,12 +280,14 @@ jobs:
       # ------------------------------------------------------------
       # Build Tauri desktop application
       # ------------------------------------------------------------
+
       - name: Build Tauri Windows application
         run: npx tauri build
 
       # ------------------------------------------------------------
       # Collect Windows installers
       # ------------------------------------------------------------
+
       - name: Collect Windows installers
         shell: pwsh
         run: |
@@ -298,6 +327,7 @@ jobs:
       # ------------------------------------------------------------
       # Verify final release assets
       # ------------------------------------------------------------
+
       - name: Verify release assets
         shell: pwsh
         run: |
@@ -322,6 +352,7 @@ jobs:
           # --------------------------------------------------------
           # Required Obsidian assets
           # --------------------------------------------------------
+
           $requiredAssets = @(
             "main.js",
             "manifest.json",
@@ -345,36 +376,31 @@ jobs:
           }
 
           # --------------------------------------------------------
-          # Verify manifest version one final time
+          # Verify manifest version
           # --------------------------------------------------------
+
           $manifest = Get-Content `
             "release-assets/manifest.json" `
             -Raw |
             ConvertFrom-Json
 
-          if ($manifest.version -ne "${env:GITHUB_REF_NAME}") {
-            throw "Release manifest version $($manifest.version) does not match Git tag ${env:GITHUB_REF_NAME}."
+          $releaseVersion = "${env:RELEASE_TAG}".Substring(1)
+
+          if ($manifest.version -ne $releaseVersion) {
+            throw "Release manifest version $($manifest.version) does not match release version $releaseVersion."
           }
 
           Write-Host ""
           Write-Host "All required Obsidian release assets are present."
-          Write-Host "Manifest version matches release tag."
+          Write-Host "Manifest version matches release version."
           Write-Host "Release asset verification passed."
 
       # ------------------------------------------------------------
       # Generate GitHub artifact attestations
       #
-      # Every file in release-assets is attested:
-      #
-      #   main.js
-      #   manifest.json
-      #   styles.css
-      #   standalone ZIP
-      #   EXE
-      #   MSI
-      #
-      # actions/attest generates signed SLSA build provenance.
+      # Every file in release-assets is attested.
       # ------------------------------------------------------------
+
       - name: Generate artifact attestations
         uses: actions/attest@v4
         with:
@@ -383,10 +409,8 @@ jobs:
 
       # ------------------------------------------------------------
       # Verify GitHub artifact attestations
-      #
-      # Every release asset must have a valid attestation before
-      # the GitHub Release is created.
       # ------------------------------------------------------------
+
       - name: Verify artifact attestations
         shell: pwsh
         env:
@@ -428,20 +452,21 @@ jobs:
       # ------------------------------------------------------------
       # Create GitHub Release
       #
-      # This happens ONLY after:
-      #   1. Builds succeed
-      #   2. Required Obsidian files are verified
-      #   3. Versions are verified
-      #   4. All release assets have attestations
-      #   5. All attestations have been cryptographically verified
+      # Automatic tag run:
+      #   The tag already exists.
+      #
+      # Manual workflow run:
+      #   gh release create creates the requested tag automatically
+      #   at the checked-out commit.
       # ------------------------------------------------------------
+
       - name: Create GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${GITHUB_REF_NAME}" \
+          gh release create "${RELEASE_TAG}" \
             release-assets/* \
             --repo "${GITHUB_REPOSITORY}" \
-            --title "OpenGantt ${GITHUB_REF_NAME}" \
+            --title "OpenGantt ${RELEASE_TAG}" \
             --generate-notes
