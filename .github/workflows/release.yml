@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - "[0-9]*"
 
   workflow_dispatch:
     inputs:
@@ -24,13 +24,12 @@ jobs:
     runs-on: windows-latest
 
     env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.version || github.ref_name }}
 
     steps:
       # ------------------------------------------------------------
       # Checkout
       # ------------------------------------------------------------
-
       - name: Check out source
         uses: actions/checkout@v4
         with:
@@ -39,7 +38,6 @@ jobs:
       # ------------------------------------------------------------
       # Node.js
       # ------------------------------------------------------------
-
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
@@ -49,7 +47,6 @@ jobs:
       # ------------------------------------------------------------
       # Rust / Tauri
       # ------------------------------------------------------------
-
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
@@ -61,34 +58,24 @@ jobs:
       # ------------------------------------------------------------
       # Dependencies
       # ------------------------------------------------------------
-
       - name: Install dependencies
         run: npm ci
 
       # ------------------------------------------------------------
       # Version validation
-      #
-      # package.json and manifest.json contain:
-      #
-      #   1.2.10
-      #
-      # The Git tag contains:
-      #
-      #   v1.2.10
-      #
-      # For manual runs, the tag is generated from the entered version.
+      # Git tag, package.json and manifest.json must all match.
+      # Example: 1.2.10
       # ------------------------------------------------------------
-
       - name: Validate release version
         shell: pwsh
         run: |
           $tagName = "${env:RELEASE_TAG}"
 
-          if ($tagName -notmatch '^v\d+\.\d+\.\d+$') {
-            throw "Invalid release tag '$tagName'. Expected format: vMAJOR.MINOR.PATCH (for example v1.2.10)."
+          if ($tagName -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Invalid release version '$tagName'. Expected MAJOR.MINOR.PATCH, for example 1.2.10."
           }
 
-          $releaseVersion = $tagName.Substring(1)
+          $releaseVersion = $tagName
 
           $packageVersion = (
             Get-Content "package.json" -Raw |
@@ -124,15 +111,10 @@ jobs:
           }
 
           Write-Host "Version check passed."
-          Write-Host "Release version: $releaseVersion"
 
       # ------------------------------------------------------------
-      # Synchronise Tauri version
-      #
-      # This modifies tauri.conf.json ONLY inside the CI workspace.
-      # It is NOT committed back to Git.
+      # Synchronise Tauri version in the CI workspace
       # ------------------------------------------------------------
-
       - name: Synchronise Tauri version
         shell: pwsh
         run: |
@@ -148,7 +130,6 @@ jobs:
           }
 
           $tauri = Get-Content $tauriPath -Raw | ConvertFrom-Json
-
           $tauri.version = $packageVersion
 
           $tauri |
@@ -160,30 +141,27 @@ jobs:
             ConvertFrom-Json
           ).version
 
-          Write-Host "Tauri version: $syncedVersion"
-
           if ($syncedVersion -ne $packageVersion) {
             throw "Failed to synchronise Tauri version."
           }
 
+          Write-Host "Tauri version: $syncedVersion"
+
       # ------------------------------------------------------------
       # Tests
       # ------------------------------------------------------------
-
       - name: Run tests
         run: npm test
 
       # ------------------------------------------------------------
-      # Build standalone application
+      # Build standalone web application
       # ------------------------------------------------------------
-
       - name: Build standalone application
         run: npm run build:app
 
       # ------------------------------------------------------------
       # Package standalone application
       # ------------------------------------------------------------
-
       - name: Package standalone application
         shell: pwsh
         run: |
@@ -206,23 +184,13 @@ jobs:
 
       # ------------------------------------------------------------
       # Build Obsidian plugin
-      #
-      # The Obsidian Community Directory expects:
-      #
-      #   main.js
-      #   manifest.json
-      #   styles.css
-      #
-      # These are uploaded as individual release assets.
       # ------------------------------------------------------------
-
       - name: Build Obsidian plugin
         run: npm run build
 
       # ------------------------------------------------------------
       # Prepare Obsidian release assets
       # ------------------------------------------------------------
-
       - name: Prepare Obsidian release assets
         shell: pwsh
         run: |
@@ -232,62 +200,37 @@ jobs:
             -Path "release-assets" |
             Out-Null
 
-          if (-not (Test-Path "main.js")) {
-            throw "main.js was not created by the Obsidian build."
+          $requiredFiles = @(
+            "main.js",
+            "manifest.json",
+            "styles.css"
+          )
+
+          foreach ($file in $requiredFiles) {
+            if (-not (Test-Path $file)) {
+              throw "Required Obsidian build file is missing: $file"
+            }
+
+            Copy-Item $file "release-assets/$file" -Force
+
+            $item = Get-Item "release-assets/$file"
+
+            if ($item.Length -eq 0) {
+              throw "Required release asset is empty: $file"
+            }
+
+            Write-Host "Prepared: $file ($($item.Length) bytes)"
           }
-
-          if (-not (Test-Path "manifest.json")) {
-            throw "manifest.json is missing."
-          }
-
-          if (-not (Test-Path "styles.css")) {
-            throw "styles.css was not created by the Obsidian build."
-          }
-
-          Copy-Item `
-            "main.js" `
-            "release-assets/main.js" `
-            -Force
-
-          Copy-Item `
-            "manifest.json" `
-            "release-assets/manifest.json" `
-            -Force
-
-          Copy-Item `
-            "styles.css" `
-            "release-assets/styles.css" `
-            -Force
-
-          Write-Host ""
-          Write-Host "========================================"
-          Write-Host "Obsidian release assets"
-          Write-Host "========================================"
-          Write-Host ""
-
-          Get-ChildItem "release-assets/main.js" |
-            Select-Object Name, Length |
-            Format-Table -AutoSize
-
-          Get-ChildItem "release-assets/manifest.json" |
-            Select-Object Name, Length |
-            Format-Table -AutoSize
-
-          Get-ChildItem "release-assets/styles.css" |
-            Select-Object Name, Length |
-            Format-Table -AutoSize
 
       # ------------------------------------------------------------
-      # Build Tauri desktop application
+      # Build Tauri Windows application
       # ------------------------------------------------------------
-
       - name: Build Tauri Windows application
         run: npx tauri build
 
       # ------------------------------------------------------------
       # Collect Windows installers
       # ------------------------------------------------------------
-
       - name: Collect Windows installers
         shell: pwsh
         run: |
@@ -297,23 +240,16 @@ jobs:
             throw "Tauri bundle directory was not created: $bundleDir"
           }
 
-          $files = Get-ChildItem `
-            $bundleDir `
-            -Recurse `
-            -File |
+          $files = @(
+            Get-ChildItem $bundleDir -Recurse -File |
             Where-Object {
               $_.Extension -in @(".msi", ".exe")
             }
+          )
 
           if ($files.Count -eq 0) {
             throw "No Windows MSI or EXE installers were produced."
           }
-
-          New-Item `
-            -ItemType Directory `
-            -Force `
-            -Path "release-assets" |
-            Out-Null
 
           foreach ($file in $files) {
             Copy-Item `
@@ -325,33 +261,25 @@ jobs:
           }
 
       # ------------------------------------------------------------
-      # Verify final release assets
+      # Verify final release assets and manifest version
       # ------------------------------------------------------------
-
       - name: Verify release assets
         shell: pwsh
         run: |
-          Write-Host ""
-          Write-Host "========================================"
-          Write-Host "Final release assets"
-          Write-Host "========================================"
-          Write-Host ""
-
-          $assets = Get-ChildItem "release-assets" -File
+          $assets = @(Get-ChildItem "release-assets" -File)
 
           if ($assets.Count -eq 0) {
             throw "No release assets were created."
           }
 
+          Write-Host ""
+          Write-Host "========================================"
+          Write-Host "Final release assets"
+          Write-Host "========================================"
+
           $assets |
             Select-Object Name, Length |
             Format-Table -AutoSize
-
-          Write-Host ""
-
-          # --------------------------------------------------------
-          # Required Obsidian assets
-          # --------------------------------------------------------
 
           $requiredAssets = @(
             "main.js",
@@ -366,41 +294,28 @@ jobs:
               throw "Required Obsidian release asset is missing: $asset"
             }
 
-            $item = Get-Item $path
-
-            if ($item.Length -eq 0) {
+            if ((Get-Item $path).Length -eq 0) {
               throw "Required release asset is empty: $asset"
             }
-
-            Write-Host "Verified required asset: $asset"
           }
-
-          # --------------------------------------------------------
-          # Verify manifest version
-          # --------------------------------------------------------
 
           $manifest = Get-Content `
             "release-assets/manifest.json" `
             -Raw |
             ConvertFrom-Json
 
-          $releaseVersion = "${env:RELEASE_TAG}".Substring(1)
+          $releaseVersion = "${env:RELEASE_TAG}"
 
           if ($manifest.version -ne $releaseVersion) {
-            throw "Release manifest version $($manifest.version) does not match release version $releaseVersion."
+            throw "Release manifest version $($manifest.version) does not match release tag $releaseVersion."
           }
 
-          Write-Host ""
-          Write-Host "All required Obsidian release assets are present."
-          Write-Host "Manifest version matches release version."
-          Write-Host "Release asset verification passed."
+          Write-Host "All required Obsidian assets are present."
+          Write-Host "Manifest version matches release tag."
 
       # ------------------------------------------------------------
-      # Generate GitHub artifact attestations
-      #
-      # Every file in release-assets is attested.
+      # Generate artifact attestations
       # ------------------------------------------------------------
-
       - name: Generate artifact attestations
         uses: actions/attest@v4
         with:
@@ -408,27 +323,15 @@ jobs:
             release-assets/*
 
       # ------------------------------------------------------------
-      # Verify GitHub artifact attestations
+      # Verify artifact attestations
       # ------------------------------------------------------------
-
       - name: Verify artifact attestations
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $repository = "${env:GITHUB_REPOSITORY}"
-
-          Write-Host ""
-          Write-Host "========================================"
-          Write-Host "Verifying artifact attestations"
-          Write-Host "========================================"
-          Write-Host ""
-
-          $assets = Get-ChildItem "release-assets" -File
-
-          if ($assets.Count -eq 0) {
-            throw "No release assets found to verify."
-          }
+          $assets = @(Get-ChildItem "release-assets" -File)
 
           foreach ($asset in $assets) {
             Write-Host "Verifying: $($asset.Name)"
@@ -442,24 +345,14 @@ jobs:
             }
 
             Write-Host "PASSED: $($asset.Name)"
-            Write-Host ""
           }
 
-          Write-Host "========================================"
           Write-Host "All artifact attestations verified."
-          Write-Host "========================================"
 
       # ------------------------------------------------------------
       # Create GitHub Release
-      #
-      # Automatic tag run:
-      #   The tag already exists.
-      #
-      # Manual workflow run:
-      #   gh release create creates the requested tag automatically
-      #   at the checked-out commit.
+      # Manual runs create the numeric version tag automatically.
       # ------------------------------------------------------------
-
       - name: Create GitHub Release
         shell: bash
         env:
@@ -469,4 +362,5 @@ jobs:
             release-assets/* \
             --repo "${GITHUB_REPOSITORY}" \
             --title "OpenGantt ${RELEASE_TAG}" \
-            --generate-notes
+            --generate-notes \
+            --target "${GITHUB_SHA}"
