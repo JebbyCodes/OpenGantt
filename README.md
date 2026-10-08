@@ -1,14 +1,23 @@
 # OpenGantt
 
+[![Website](https://img.shields.io/badge/Website-OpenGantt-458588?logo=googlechrome\&logoColor=white)](https://jebbycodes.github.io/OpenGantt/)
+[![Obsidian Plugin](https://img.shields.io/badge/Obsidian-Plugin-7C3AED?logo=obsidian\&logoColor=white)](https://community.obsidian.md/plugins/gantt)
+[![GitHub Release](https://img.shields.io/github/v/release/JebbyCodes/OpenGantt?label=release)](https://github.com/JebbyCodes/OpenGantt/releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/JebbyCodes/OpenGantt/release.yml?label=build)](https://github.com/JebbyCodes/OpenGantt/actions/workflows/release.yml)
+[![License](https://img.shields.io/github/license/JebbyCodes/OpenGantt)](https://github.com/JebbyCodes/OpenGantt/blob/main/LICENSE)
+[![GitHub Stars](https://img.shields.io/github/stars/JebbyCodes/OpenGantt)](https://github.com/JebbyCodes/OpenGantt/stargazers)
+
 > A lightweight, YAML-driven Gantt chart for the browser, Obsidian, and desktop.
+
+**[🌐 OpenGantt Website](https://jebbycodes.github.io/OpenGantt/)** · **[📝 Obsidian Plugin](https://community.obsidian.md/plugins/gantt)** · **[📦 GitHub Releases](https://github.com/JebbyCodes/OpenGantt/releases)**
 
 OpenGantt turns a small YAML definition into an interactive Gantt chart with **planned work, actual work, live progress, hierarchical tasks, custom columns, printing, and export**.
 
 It can be used in three ways:
 
-* 🌐 **Standalone web app** — open a single HTML file directly in your browser.
+* 🌐 **Standalone web app** — use OpenGantt directly in your browser or as a self-contained HTML application.
 * 📝 **Obsidian plugin** — embed Gantt charts directly inside Markdown notes.
-* 🖥️ **Desktop application** — package the same frontend as a Tauri application.
+* 🖥️ **Desktop application** — package the same frontend as a native Tauri application.
 
 The chart data remains plain YAML, making it easy to read, edit, search, diff, back up, and keep alongside the project it describes.
 
@@ -82,19 +91,13 @@ Because the chart is represented as text, it works particularly well with Git, M
 
 ## 🚀 Quick start
 
-### Standalone version
+### 🌐 Web version
 
-The repository contains a pre-built standalone application:
+**[Open OpenGantt in your browser →](https://jebbycodes.github.io/OpenGantt/)**
 
-```text
-dist/Gantt.html
-```
+The web version runs directly in your browser with no installation required.
 
-Simply open it in a modern browser.
-
-No server is required and the standalone build does not need an internet connection.
-
-The application provides:
+It provides:
 
 * YAML editing
 * Open
@@ -109,6 +112,32 @@ The application provides:
 * Timeline scaling
 * Plan / Actual / Both modes
 * Table and column controls
+
+The repository also contains a self-contained standalone application:
+
+```text
+dist/Gantt.html
+```
+
+Simply open it in a modern browser.
+
+No server is required and the standalone build does not need an internet connection.
+
+### 📝 Obsidian
+
+OpenGantt is available through the **[Obsidian Community Plugins](https://community.obsidian.md/plugins/gantt)**.
+
+Install it from:
+
+**Settings → Community plugins → Browse → OpenGantt**
+
+Alternatively, you can build and install the plugin manually using the development instructions below.
+
+### 🖥️ Desktop
+
+OpenGantt can also be packaged as a native desktop application using **[Tauri 2](https://tauri.app/)**.
+
+See [Building the desktop application](#building-the-desktop-application) for instructions.
 
 ### Keyboard shortcuts
 
@@ -125,17 +154,27 @@ The application provides:
 
 ## Requirements
 
-### For using the standalone application
+### For using the web application
 
 No installation is required.
 
 Open:
 
+**https://jebbycodes.github.io/OpenGantt/**
+
+in a modern browser.
+
+Alternatively, download or clone the repository and open:
+
 ```text
 dist/Gantt.html
 ```
 
-in a modern browser.
+### For using the Obsidian plugin
+
+Install OpenGantt from the **[Obsidian Community Plugins](https://community.obsidian.md/plugins/gantt)**.
+
+No additional dependencies are required for normal plugin use.
 
 ### For development
 
@@ -299,7 +338,7 @@ Then open Obsidian and go to:
 
 # 🖥️ Building the desktop application
 
-OpenGantt uses [Tauri 2](https://tauri.app/) for its desktop shell.
+OpenGantt uses **[Tauri 2](https://tauri.app/)** for its desktop shell.
 
 The Tauri configuration specifies:
 
@@ -585,7 +624,7 @@ CSV exports include every task, including tasks hidden by collapsed parent rows.
 
 OpenGantt can render charts directly inside Obsidian Markdown notes.
 
-Add a `gantt` code block:
+Install OpenGantt from the **[Obsidian Community Plugins](https://community.obsidian.md/plugins/gantt)**, then add a `gantt` code block:
 
 ````markdown
 ```gantt
@@ -760,7 +799,7 @@ The standalone builder embeds the application's JavaScript, CSS, and YAML parser
 
 # 🔗 ts-gantt
 
-OpenGantt is based on the [`ts-gantt`](https://github.com/yermolim/ts-gantt) project.
+OpenGantt is based on the **[`ts-gantt`](https://github.com/yermolim/ts-gantt)** project.
 
 `ts-gantt` provides the underlying Gantt-chart concepts and rendering foundation, while OpenGantt adds its own:
 
@@ -823,7 +862,7 @@ When reporting a problem, include as much of the following as possible:
 * Operating system
 * Browser or Obsidian version
 * OpenGantt version/commit
-* Whether you are using the standalone app, Obsidian plugin, or desktop application
+* Whether you are using the web app, Obsidian plugin, or desktop application
 * The YAML that reproduces the issue
 * Console/build errors
 * Screenshots or recordings when appropriate
@@ -842,19 +881,23 @@ OpenGantt incorporates the MIT-licensed [`ts-gantt`](https://github.com/yermolim
 
 ---
 
-## Acknowledgements
+# 🙏 Acknowledgements
 
-* **[ts-gantt](https://github.com/yermolim/ts-gantt)** — underlying Gantt chart foundation
-* **[js-yaml](https://github.com/nodeca/js-yaml)** — YAML parsing
+* **[`ts-gantt`](https://github.com/yermolim/ts-gantt)** — underlying Gantt chart foundation
+* **[`js-yaml`](https://github.com/nodeca/js-yaml)** — YAML parsing
 * **[Obsidian](https://obsidian.md/)** — Markdown knowledge-management platform supported by the plugin
 * **[Tauri](https://tauri.app/)** — desktop application framework
 
 ---
 
-## ⚠️ Project status
+# ⚠️ Project status
 
 OpenGantt is an actively developed open-source project.
 
-The repository currently contains a standalone browser application, an Obsidian plugin build, and a Tauri desktop shell. Features and interfaces may change between versions.
+The repository currently contains a standalone browser application, an Obsidian plugin, and a Tauri desktop shell. Features and interfaces may change between versions.
+
+The latest web version is available at:
+
+**[🌐 https://jebbycodes.github.io/OpenGantt/](https://jebbycodes.github.io/OpenGantt/)**
 
 If you are using OpenGantt for important project planning, keep your YAML/Markdown source files under version control or maintain regular backups.
