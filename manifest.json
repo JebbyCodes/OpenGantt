@@ -1,7 +1,7 @@
 {
   "id": "gantt",
   "name": "OpenGantt",
-  "version": "1.2.8",
+  "version": "1.2.9",
   "minAppVersion": "1.0.0",
   "description": "Create interactive Gantt charts from YAML in your notes.",
   "author": "JebbyCodes",
