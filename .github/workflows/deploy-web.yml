@@ -36,8 +36,13 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build web app
+      - name: Build OpenGantt
         run: npm run build:app
+
+      - name: Prepare website
+        run: |
+          mkdir -p site
+          cp dist/Gantt.html site/index.html
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
@@ -45,8 +50,8 @@ jobs:
       - name: Upload website
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./dist
+          path: ./site
 
-      - name: Deploy to GitHub Pages
+      - name: Deploy
         id: deployment
         uses: actions/deploy-pages@v4
