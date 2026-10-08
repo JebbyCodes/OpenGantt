@@ -1,6 +1,6 @@
 {
   "name": "obsidian-gantt",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "private": false,
   "description": "Lightweight YAML-driven Gantt chart for planning, tracking, and visualising project timelines and progress.",
   "type": "module",
