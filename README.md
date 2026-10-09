@@ -2,7 +2,7 @@
 <h1>
   <img src="logo.png" alt="OpenGantt logo" width="36" height="36" style="vertical-align: middle;">
   OpenGantt
-</h1> # OpenGantt
+</h1>
 
 [![Website](https://img.shields.io/badge/Website-OpenGantt-458588?logo=googlechrome\&logoColor=white)](https://jebbycodes.github.io/OpenGantt/)
 [![Obsidian Plugin](https://img.shields.io/badge/Obsidian-Plugin-7C3AED?logo=obsidian\&logoColor=white)](https://community.obsidian.md/plugins/gantt)
