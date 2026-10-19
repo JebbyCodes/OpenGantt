@@ -1,5 +1,9 @@
 import Plugin from "gantt-main";
 import { saveFile, Notice } from "obsidian";
+import { createCodeEditor } from "gantt-codeeditor";
+import { createVisualEditor, pathFromId } from "gantt-visual";
+import { normalizeYaml } from "gantt-model";
+import { openDialog } from "gantt-dialog";
 
 const $ = (s) => document.querySelector(s);
 const KEY = "gantt-app:doc";
@@ -8,12 +12,91 @@ const plugin = new Plugin();
 await plugin.onload();
 const processor = plugin.processors.gantt;
 
-const editor = $("#editor"), pane = $("#chart"), fileLabel = $("#file");
+// The page itself follows the chart theme.
+const applyPageTheme = (id) => { document.documentElement.dataset.ogTheme = id; };
+plugin.onThemeChange = applyPageTheme;
+applyPageTheme(plugin.state.theme);
+
+const pane = $("#chart"), fileLabel = $("#file");
 const MD = /\.(md|markdown|mdx)$/i;
 
 let name = localStorage.getItem(`${KEY}:name`) || "Gantt";
 let source = localStorage.getItem(KEY) ?? window.__GANTT_EXAMPLE__;
 let child = null;
+
+// ---- The two editors: line-numbered YAML text, and the form-based visual editor. Both change `source`. -------------
+const parseDoc = (t) => window.jsyaml.load(normalizeYaml(t));
+const code = createCodeEditor({ value: source, onInput: (t) => textChanged(t, "yaml") });
+$("#paneYaml").append(code.el);
+const visual = createVisualEditor({ parse: parseDoc, setText: (t, structural) => textChanged(t, "visual", structural) });
+$("#paneVisual").append(visual.el);
+
+let tab = localStorage.getItem(`${KEY}:tab`) === "yaml" ? "yaml" : "visual";
+function showTab(name) {
+  tab = name;
+  localStorage.setItem(`${KEY}:tab`, name);
+  $("#tabVisual").classList.toggle("is-active", name === "visual");
+  $("#tabYaml").classList.toggle("is-active", name === "yaml");
+  $("#tabVisual").setAttribute("aria-selected", String(name === "visual"));
+  $("#tabYaml").setAttribute("aria-selected", String(name === "yaml"));
+  $("#paneVisual").hidden = name !== "visual";
+  $("#paneYaml").hidden = name !== "yaml";
+  if (name === "visual") visual.load(source);
+  else { code.refresh(); code.focus(); }
+}
+$("#tabVisual").onclick = () => showTab("visual");
+$("#tabYaml").onclick = () => showTab("yaml");
+
+// ---- Undo / redo over the whole text, so it covers Visual edits as well as typing. Edits that arrive in quick
+// succession from the same editor count as one step. -----------------------------------------------------------------
+const hist = { undo: [], redo: [], at: 0, from: "" };
+function syncHistoryButtons() {
+  $("#undo").disabled = !hist.undo.length;
+  $("#redo").disabled = !hist.redo.length;
+}
+function record(prev, from, step = false) {
+  const now = Date.now();
+  if (step || from !== hist.from || now - hist.at > 700) {
+    hist.undo.push(prev);
+    if (hist.undo.length > 200) hist.undo.shift();
+  }
+  hist.redo.length = 0;
+  hist.at = now;
+  hist.from = from;
+  syncHistoryButtons();
+}
+function setSource(t) {
+  source = t;
+  code.setValue(t);
+  if (tab === "visual") visual.load(t);
+  setDirty(true);
+  persist();
+  render();
+}
+function undo() {
+  if (!hist.undo.length) return;
+  hist.redo.push(source);
+  hist.from = "";
+  setSource(hist.undo.pop());
+  syncHistoryButtons();
+}
+function redo() {
+  if (!hist.redo.length) return;
+  hist.undo.push(source);
+  hist.from = "";
+  setSource(hist.redo.pop());
+  syncHistoryButtons();
+}
+$("#undo").onclick = undo;
+$("#redo").onclick = redo;
+
+// ---- Double-click a task in the chart (or Edit): open it in the visual editor ----------------------------------
+plugin.onTaskActivate = (_block, id) => {
+  document.body.classList.remove("noeditor");
+  $("#toggle").textContent = "Hide editor";
+  showTab("visual");
+  if (id) visual.select(pathFromId(id));
+};
 
 // What the chart came from, so Save puts the YAML back into that same file instead of always dropping a
 // fresh .yaml into Downloads.
@@ -75,13 +158,19 @@ function render() {
     sc: prev.hostEl?.querySelector(".epq-chart"),
   };
   const pos = keep?.sc && { l: keep.sc.scrollLeft, t: keep.sc.scrollTop };
+  const view = prev && { userSort: prev.userSort, filter: prev.filter, height: prev.height };
   prev?.unload();
   pane.textContent = "";
   child = null;
   processor(source, pane.createDiv(), {
     sourcePath: `${name}.md`,
-    addChild(c) { child = c; c.load(); },
+    addChild(c) {
+      child = c;
+      if (view) Object.assign(c, view); // an edit should not undo the reader's sort, filter or chart height
+      c.load();
+    },
   });
+  try { parseDoc(source); code.setError(0); } catch (e) { code.setError((e.mark?.line ?? -1) + 1); }
   if (keep && child.tasks) {
     // an edit should not reset scale, mode, collapsed rows or scroll
     const ids = new Set(child.tasks.map((t) => t.id));
@@ -107,21 +196,32 @@ function persist() {
   } catch {}
 }
 
+// "Gantt" is the name of a chart that has not been saved or opened: show that as "Untitled chart".
+const UNTITLED = "Gantt";
+function refreshTitles() {
+  const shown = name === UNTITLED ? "Untitled chart" : name;
+  fileLabel.textContent = shown;
+  document.title = `${doc.dirty ? "\u2022 " : ""}${name === UNTITLED ? "OpenGantt" : `${shown} \u2014 OpenGantt`}`;
+}
+
 function setDirty(on) {
   doc.dirty = on;
   fileLabel.classList.toggle("is-dirty", on);
-  document.title = `${on ? "\u2022 " : ""}${name} \u2014 Gantt`;
+  refreshTitles();
 }
 
 const setName = (n) => {
   name = n;
-  fileLabel.textContent = n;
-  document.title = `${doc.dirty ? "\u2022 " : ""}${n} \u2014 Gantt`;
+  refreshTitles();
 };
 
 function load(text, fileName, opts = {}) {
   source = text;
-  editor.value = text;
+  code.setValue(text);
+  if (tab === "visual") visual.load(text);
+  hist.undo.length = hist.redo.length = 0; // a freshly opened file starts a fresh history
+  hist.from = "";
+  syncHistoryButtons();
   doc.kind = opts.kind ?? (/\.ya?ml$/i.test(fileName) ? "yaml" : MD.test(fileName) ? "markdown" : "text");
   doc.ext = opts.ext ?? (fileName.match(/\.[^.]+$/)?.[0] || (doc.kind === "markdown" ? ".md" : ".yaml"));
   doc.wrap = opts.wrap ?? null;
@@ -134,20 +234,16 @@ function load(text, fileName, opts = {}) {
 }
 
 let timer = 0;
-editor.addEventListener("input", () => {
-  source = editor.value;
+// Every change, from either editor, ends up here.
+function textChanged(t, from, step = false) {
+  record(source, from, step);
+  source = t;
+  if (from !== "yaml") code.setValue(t);
   setDirty(true);
   persist();
   clearTimeout(timer);
   timer = setTimeout(render, 250);
-});
-
-editor.addEventListener("keydown", (e) => {
-  // Tab indents instead of leaving the editor
-  if (e.key !== "Tab") return;
-  e.preventDefault();
-  document.execCommand("insertText", false, "  ");
-});
+}
 
 // ---- Reading a file --------------------------------------------------------------------------
 
@@ -330,7 +426,8 @@ $("#copy").onclick = async () => {
     await navigator.clipboard.writeText(text);
     new Notice("Copied. Paste it into any Obsidian note.");
   } catch {
-    editor.select();
+    showTab("yaml");
+    code.textarea.select();
     new Notice("Couldn't copy automatically; the YAML is selected in the editor.");
   }
 };
@@ -346,19 +443,69 @@ $("#toggle").onclick = () => {
   child?.draw();
 };
 
+$("#version").onclick = () => plugin.openHelp("about");
+
+// ---- The divider between the editor and the chart: drag to resize, double-click to reset, arrow keys to nudge. ----
+{
+  const main = $("main"), split = $("#split");
+  const MIN = 280;
+  const max = () => Math.max(MIN, innerWidth - 380);
+  let width = Math.min(max(), Math.max(MIN, Number(localStorage.getItem(`${KEY}:split`)) || 440));
+  const set = (w, save = true) => {
+    width = Math.round(Math.min(max(), Math.max(MIN, w)));
+    main.style.setProperty("--editor-w", `${width}px`);
+    split.setAttribute("aria-valuenow", String(width));
+    if (save) localStorage.setItem(`${KEY}:split`, String(width));
+  };
+  set(width, false);
+  split.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const x0 = e.clientX, w0 = width;
+    split.classList.add("is-dragging");
+    document.body.classList.add("is-splitting");
+    const move = (ev) => set(w0 + ev.clientX - x0, false);
+    const up = () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      split.classList.remove("is-dragging");
+      document.body.classList.remove("is-splitting");
+      set(width);
+      child?.draw();
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+  });
+  split.addEventListener("dblclick", () => { set(440); child?.draw(); });
+  split.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    e.preventDefault();
+    set(width + (e.key === "ArrowRight" ? 24 : -24));
+    child?.draw();
+  });
+  addEventListener("resize", () => set(width, false));
+}
+
 addEventListener("keydown", (e) => {
   if (!(e.ctrlKey || e.metaKey)) return;
   const k = e.key.toLowerCase();
   if (k === "s") { e.preventDefault(); saveDoc(e.shiftKey); } // Ctrl+S saves, Ctrl+Shift+S saves as…
   if (k === "o") { e.preventDefault(); $("#open").click(); }
   if (k === "p" && child?.print) { e.preventDefault(); child.print(); }
+  // Undo / redo everywhere except inside the YAML box, which has its own native undo.
+  if ((k === "z" || k === "y") && document.activeElement !== code.textarea) {
+    e.preventDefault();
+    if (k === "y" || e.shiftKey) redo(); else undo();
+  }
 });
 
 addEventListener("beforeunload", (e) => {
   if (doc.dirty) { e.preventDefault(); e.returnValue = ""; }
 });
 
-editor.value = source;
+$("#version").textContent = `v${window.__GANTT_VERSION__}`;
+showTab(tab);
+syncHistoryButtons();
 setName(name);
 setDirty(false);
 render();

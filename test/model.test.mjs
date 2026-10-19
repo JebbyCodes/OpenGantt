@@ -26,9 +26,9 @@ assert.equal(t[3].datePlannedStart, null);
 assert.equal(iso(t[4].datePlannedEnd), "2027-01-18");            // single plan date = same-day end
 assert.equal(new Set(t.map((x) => x.id)).size, t.length);        // ids unique
 
-assert.deepEqual(readBlockOptions({}), { scale: "day", mode: "both", height: 520, padding: 7, hatch: true, progress: true, editable: false, collapsed: false, columns: null, table: null, title: null });
+assert.deepEqual(readBlockOptions({}), { scale: "day", mode: "both", height: 520, padding: 7, hatch: true, progress: true, editable: false, collapsed: false, weekends: false, markers: [], nameColors: "tree", tagLabels: true, sort: null, columns: null, table: null, title: null });
 assert.deepEqual(readBlockOptions({ scale: "week", mode: "plan", height: 9999, editable: true }),
-  { scale: "week", mode: "planned", height: 1600, padding: 7, hatch: true, progress: true, editable: true, collapsed: false, columns: null, table: null, title: null });
+  { scale: "week", mode: "planned", height: 1600, padding: 7, hatch: true, progress: true, editable: true, collapsed: false, weekends: false, markers: [], nameColors: "tree", tagLabels: true, sort: null, columns: null, table: null, title: null });
 console.log("model tests passed");
 assert.equal(readBlockOptions({ padding: 21 }).padding, 21);
 console.log("padding ok");
@@ -54,8 +54,8 @@ console.log("order ok");
 
 // Extra row keys become custom-column data; nested values and blanks are ignored; dates become ISO text.
 import { normKey } from "../src/model.js";
-const ex = buildTasks([{ label: "x", owner: "Sam", tags: ["a", "b"], nested: { a: 1 }, blank: "  ", n: 3, when: new Date(Date.UTC(2026, 8, 7)) }], today)[0].extra;
-assert.deepEqual(ex, { owner: "Sam", tags: "a, b", n: "3", when: "2026-09-07" });
+const ex = buildTasks([{ label: "x", owner: "Sam", labels: ["a", "b"], nested: { a: 1 }, blank: "  ", n: 3, when: new Date(Date.UTC(2026, 8, 7)) }], today)[0].extra;
+assert.deepEqual(ex, { owner: "Sam", labels: "a, b", n: "3", when: "2026-09-07" });
 assert.deepEqual(buildTasks([{ label: "y", notes: "n", plan: ["2026-09-07"] }], today)[0].extra, {}); // known keys are not extras
 assert.equal(normKey("Start planned"), normKey("start-planned"));
 console.log("extras ok");

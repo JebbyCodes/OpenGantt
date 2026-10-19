@@ -6,8 +6,12 @@
   "type": "module",
   "scripts": {
     "build": "node esbuild.mjs",
-    "test": "node test/model.test.mjs && node test/timeline.test.mjs && node test/columns.test.mjs && node test/export.test.mjs",
-    "build:app": "node build-app.mjs"
+    "test": "node test/model.test.mjs && node test/timeline.test.mjs && node test/columns.test.mjs && node test/export.test.mjs && node test/segments.test.mjs && node test/features.test.mjs && node test/serialize.test.mjs && node test/arrange.test.mjs",
+    "build:app": "node build-app.mjs",
+    "test:browser": "python3 test/browser/ui.test.py",
+    "screenshots": "python3 scripts/screenshots.py",
+    "version:sync": "node scripts/sync-version.mjs",
+    "version:check": "node scripts/sync-version.mjs --check"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.12.1",

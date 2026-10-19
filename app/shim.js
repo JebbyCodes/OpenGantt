@@ -6,6 +6,9 @@ const mk = (parent, tag, o = {}) => {
   if (o.text != null) el.textContent = o.text;
   if (o.attr) for (const [k, v] of Object.entries(o.attr)) el.setAttribute(k, v);
   if (o.type) el.type = o.type;
+  if (o.placeholder != null) el.placeholder = o.placeholder;
+  if (o.title != null) el.title = o.title;
+  if (o.href != null) el.href = o.href;
   if (o.value != null) el.value = o.value;
   parent.appendChild(el);
   return el;
@@ -36,7 +39,7 @@ window.__app = { vault: { getAbstractFileByPath: () => null, createBinary: async
 
 const KEY = "gantt-app:state";
 export class Plugin {
-  constructor() { this.app = window.__app; this.processors = {}; }
+  constructor() { this.app = window.__app; this.processors = {}; this.manifest = { version: window.__GANTT_VERSION__ }; }
   async loadData() { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } }
   async saveData(d) { try { localStorage.setItem(KEY, JSON.stringify(d)); } catch {} }
   registerMarkdownCodeBlockProcessor(lang, fn) { this.processors[lang] = fn; }

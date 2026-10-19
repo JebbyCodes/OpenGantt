@@ -4,7 +4,7 @@
 //               cls?(task, env) -> extra CSS class, builtin, key? }.
 // A layout is { order: [every column id, in display order], shown: Set of ids }.
 import { DAY, taskStatus } from "./timeline.js";
-import { normKey } from "./model.js";
+import { normKey, planSegsOf, factSegsOf } from "./model.js";
 
 export function fmt(d) {
   return d ? d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "2-digit", timeZone: "UTC" }) : "–";
@@ -23,23 +23,50 @@ export function varianceDays(t, today) {
   return null;
 }
 
+// Days covered by a list of ranges, counting both end days. Overlaps and shared days count once, and the
+// gaps between separate ranges do not count at all.
+function coveredDays(ranges) {
+  const sorted = ranges.filter((r) => r.start).sort((a, b) => a.start - b.start);
+  let total = 0;
+  let cur = null;
+  for (const r of sorted) {
+    if (cur && r.start <= +cur.end + DAY) cur = { start: cur.start, end: r.end > cur.end ? r.end : cur.end };
+    else {
+      if (cur) total += inclusiveDays(cur.start, cur.end);
+      cur = r;
+    }
+  }
+  if (cur) total += inclusiveDays(cur.start, cur.end);
+  return total;
+}
+
 export function plannedDays(t) {
-  return t.datePlannedStart ? inclusiveDays(t.datePlannedStart, t.datePlannedEnd ?? t.datePlannedStart) : null;
+  const segs = planSegsOf(t);
+  return segs.length ? coveredDays(segs) : null;
 }
 
 export function actualDays(t, today) {
-  if (!t.dateActualStart) return null;
-  const end = t.factOpen && today < t.dateActualStart ? t.dateActualStart : t.dateActualEnd ?? t.dateActualStart;
-  return inclusiveDays(t.dateActualStart, end);
+  const segs = factSegsOf(t);
+  if (!segs.length) return null;
+  // An open range runs to today, but never counts backwards from a future start.
+  return coveredDays(segs.map((s) => ({ start: s.start, end: s.open && today < s.start ? s.start : s.end })));
 }
 
+// "7 Sep 26 – 12 Sep 26; 21 Sep 26 – 25 Sep 26" for the table; "2026-09-07..2026-09-12; ..." for CSV.
+// An open last range reads "7 Sep 26 – ongoing".
+const rangeText = (s, open) => (open ? `${fmt(s.start)} – ongoing` : +s.end === +s.start ? fmt(s.start) : `${fmt(s.start)} – ${fmt(s.end)}`);
+const rangeRaw = (s, open) => `${iso(s.start)}..${open ? "" : iso(s.end)}`;
+const planRanges = (t) => planSegsOf(t).map((s) => rangeText(s, false)).join("; ");
+const actualRanges = (t) => factSegsOf(t).map((s) => rangeText(s, s.open)).join("; ");
+
+const STATUS_RANK = { overdue: 0, progress: 1, idle: 2, late: 3, done: 4 }; // the order the Status column sorts in
 export const STATUS_TEXT = { idle: "Not started", progress: "In progress", overdue: "Overdue", done: "Completed", late: "Completed late" };
 
 const dayText = (n) => (n == null ? "–" : plural(n));
 
 // The columns the table has always had come first and keep their exact widths.
 const BUILTIN = [
-  { id: "progress", label: "Progress", width: 70, get: (t) => (t.dateActualStart ? `${t.progress}%` : "–"), raw: (t) => (t.dateActualStart ? t.progress : "") },
+  { id: "progress", label: "Progress", width: 70, get: (t) => (t.dateActualStart || t.progressSet != null ? `${t.progress}%` : "–"), raw: (t) => (t.dateActualStart || t.progressSet != null ? t.progress : "") },
   { id: "planStart", label: "Start planned", width: 92, get: (t) => fmt(t.datePlannedStart), raw: (t) => iso(t.datePlannedStart) },
   { id: "planEnd", label: "End planned", width: 92, get: (t) => fmt(t.datePlannedEnd), raw: (t) => iso(t.datePlannedEnd) },
   { id: "actualStart", label: "Start actual", width: 92, get: (t) => fmt(t.dateActualStart), raw: (t) => iso(t.dateActualStart) },
@@ -55,11 +82,15 @@ const BUILTIN = [
     raw: (t, e) => varianceDays(t, e.today) ?? "",
   },
   {
-    id: "status", label: "Status", width: 128,
+    id: "status", label: "Status", width: 128, sort: (t, e) => STATUS_RANK[taskStatus(t, e.today)],
     get: (t, e) => STATUS_TEXT[taskStatus(t, e.today)],
     cls: (t, e) => `epq-st-${taskStatus(t, e.today)}`,
   },
+  { id: "tags", label: "Tags", width: 150, get: (t) => (t.tags ?? []).join(", "), raw: (t) => (t.tags ?? []).join("; ") },
   { id: "notes", label: "Notes", width: 190, get: (t) => t.notes.replace(/\s+/g, " ").trim(), raw: (t) => t.notes },
+  // Every separate range of a task, for tasks that start and stop more than once.
+  { id: "planRanges", label: "Planned ranges", width: 230, get: (t) => planRanges(t), raw: (t) => planSegsOf(t).map((s) => rangeRaw(s, false)).join("; ") },
+  { id: "actualRanges", label: "Actual ranges", width: 230, get: (t) => actualRanges(t), raw: (t) => factSegsOf(t).map((s) => rangeRaw(s, s.open)).join("; ") },
 ];
 
 // Shown until the user chooses otherwise: exactly what v3 showed.
@@ -119,6 +150,43 @@ export function matchColumn(cols, token) {
   if (!n) return null;
   const hit = cols.find((c) => normKey(c.id) === n || normKey(c.label) === n || (c.key && normKey(c.key) === n));
   return hit ? hit.id : null;
+}
+
+// The value a column sorts by: its own `sort`, else its raw value (ISO dates, numbers), else the text shown.
+export function sortValue(col, t, env) {
+  if (col.sort) return col.sort(t, env);
+  const v = col.raw ? col.raw(t, env) : col.get(t, env);
+  return typeof v === "string" && /^\d+(\.\d+)?$/.test(v) ? Number(v) : v;
+}
+
+// ---- Widths ----------------------------------------------------------------------------------------------------------
+// Columns grow to fit their text (so nothing is cut off), and a width you drag a column to wins over that. The screen
+// and the print/image export both use this, so they always agree.
+export const WIDTH_LIMITS = { name: [120, 900], column: [40, 800] };
+const clampW = (v, [lo, hi]) => Math.min(hi, Math.max(lo, Math.round(v)));
+
+// What the name column needs: indent + chevron + status dot + the longest name.
+export function autoNameWidth(tasks, measure, px = 13) {
+  const longest = Math.max(0, ...tasks.map((t) => 10 + (t.depth ?? 0) * 18 + 18 + 14 + measure(t.name, px, false)));
+  return Math.min(520, Math.max(200, Math.ceil(longest + 14)));
+}
+
+export function autoColumnWidth(col, tasks, measure, env, px = 13, headPad = 30) {
+  let w = Math.max(col.width, Math.ceil(measure(col.label, px, true)) + headPad); // on screen: room for the sort arrow and resize grip
+  for (const t of tasks) w = Math.max(w, Math.ceil(measure(cellText(col, t, env), px, false)) + 22);
+  return Math.min(w, 320);
+}
+
+// manual: { name?: px, [columnId]: px } -> { name, cols: Map(id -> px), auto: Set(ids that are still automatic) }
+export function columnWidths({ tasks, columns, measure, env, px = 13, manual = {}, headPad = 30 }) {
+  const auto = new Set();
+  const name = manual.name != null ? clampW(manual.name, WIDTH_LIMITS.name) : (auto.add("name"), autoNameWidth(tasks, measure, px));
+  const cols = new Map();
+  for (const c of columns) {
+    if (manual[c.id] != null) cols.set(c.id, clampW(manual[c.id], WIDTH_LIMITS.column));
+    else { auto.add(c.id); cols.set(c.id, autoColumnWidth(c, tasks, measure, env, px, headPad)); }
+  }
+  return { name, cols, auto };
 }
 
 export function cellText(col, t, env) {

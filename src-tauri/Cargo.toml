@@ -1,6 +1,6 @@
 [package]
 name = "opengantt"
-version = "1.2.0"
+version = "1.2.11"
 description = "Desktop shell for OpenGantt"
 authors = ["JebbyCodes"]
 edition = "2021"

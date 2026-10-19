@@ -1,8 +1,17 @@
 import { Plugin, MarkdownRenderChild, Menu, Notice, Platform, normalizePath, parseYaml } from "obsidian";
 import "./styles.css";
-import { buildTasks, readBlockOptions, todayUtc, visibleTasks, parentIds } from "./model.js";
+import { buildTasks, readBlockOptions, todayUtc, visibleTasks, parentIds, planSegsOf, factSegsOf, normalizeYaml } from "./model.js";
+import { filterTasks, sortTasks, allTags } from "./arrange.js";
+import { nameColors } from "./tree-colors.js";
+import { tagColor, TAG_ICON_D } from "./timeline.js";
+import { THEMES, DEFAULT_THEME, themeList, getTheme, schemeOf, customCssTemplate, installThemeStyles } from "./themes.js";
+import { h, svgNode } from "./dom.js";
+import { openDialog } from "./dialog.js";
+import { renderHelp, renderAbout, renderCredits } from "./help.js";
+import { createVisualEditor, pathFromId } from "./visual.js";
+import { createCodeEditor } from "./codeeditor.js";
 import { drawChart } from "./chart.js";
-import { buildColumns, resolveLayout, mergeSaved, visibleColumns, moveStep, moveToVisibleSlot, humanize } from "./columns.js";
+import { buildColumns, matchColumn, resolveLayout, mergeSaved, visibleColumns, moveStep, moveToVisibleSlot, humanize, sortValue } from "./columns.js";
 import { layoutChart, buildImageSvg, buildPrintPages, buildPrintHtml, buildCsv, exportFileName, printDesignWidth, estimate, FONT } from "./export.js";
 
 const SCALE_LABELS = [["day", "Day"], ["week", "Week"], ["month", "Month"], ["year", "Year"]];
@@ -136,11 +145,25 @@ class GanttBlock extends MarkdownRenderChild {
       r.createSpan({ text: value });
     };
     const today = this.today;
-    row("Planned", rangeText(task.datePlannedStart, task.datePlannedEnd, today), "is-plan");
-    row("Actual", rangeText(task.dateActualStart, task.dateActualEnd, today), "is-actual");
-    if (task.factOpen) row("Progress", `${fmtDate(task.dateActualStart)} – today (${dayCount(task.dateActualStart, today)} days), ${task.progress}% of plan`, "is-actual");
-    else if (task.dateActualStart) row("Progress", `${task.progress}%`, "");
+    // One line per range; a task with several ranges numbers them ("Planned 1", "Planned 2", ...).
+    const ranges = (name, segs, cls) => {
+      segs.forEach((seg, i) => row(segs.length > 1 ? `${name} ${i + 1}` : name, rangeText(seg.start, seg.end, today), cls));
+    };
+    ranges("Planned", planSegsOf(task), "is-plan");
+    ranges("Actual", factSegsOf(task), "is-actual");
+    if (task.planDerived || task.factDerived) row("Dates", "from subtasks", "");
+    const open = factSegsOf(task).find((seg) => seg.open);
+    if (open) row("Progress", `${fmtDate(open.start)} – today (${dayCount(open.start, today)} days), ${task.progress}% of plan`, "is-actual");
+    else if (task.dateActualStart || task.progressSet != null) row("Progress", `${task.progress}%`, "");
     for (const [key, value] of Object.entries(task.extra ?? {})) row(humanize(key), value, "");
+    if (task.tags?.length) {
+      const wrap = tip.createDiv({ cls: "epq-gantt-tip-tags" });
+      const scheme = schemeOf(this.blockEl, this.plugin.state.theme);
+      for (const tag of task.tags) {
+        const chip = h("span", { class: "epq-gantt-tip-tag", title: `Tag: ${tag}` }, svgNode(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 12"><path d="${TAG_ICON_D}" fill="${tagColor(tag, scheme)}"/></svg>`), tag);
+        wrap.append(chip);
+      }
+    }
     if (task.notes) tip.createDiv({ cls: "epq-gantt-tip-notes", text: task.notes });
   }
 
@@ -155,11 +178,70 @@ class GanttBlock extends MarkdownRenderChild {
     this.draw();
   }
 
+  // ---- Arranging: filter and sort -------------------------------------------------------------------------------
+  scheme() {
+    return schemeOf(this.blockEl, this.plugin.state.theme);
+  }
+
+  colorSeed() {
+    return this.opts?.title ?? "";
+  }
+
+  sortValueOf(t, id) {
+    if (id === "name") return t.name;
+    const col = this.available.find((c) => c.id === id);
+    return col ? sortValue(col, t, { today: this.today }) : null;
+  }
+
+  // The tasks as shown: filtered, then sorted within their parents. `this.tasks` stays in YAML order.
+  arranged() {
+    let list = filterTasks(this.tasks, this.filter);
+    if (this.sort) list = sortTasks(list, this.sort, (t) => this.sortValueOf(t, this.sort.id));
+    return list;
+  }
+
+  // Click on a heading: ascending, then descending, then back to the original order.
+  cycleSort(id) {
+    if (this.sort?.id !== id) this.sort = { id, dir: "asc" };
+    else if (this.sort.dir === "asc") this.sort = { id, dir: "desc" };
+    else this.sort = null;
+    this.userSort = this.sort;
+    this.syncSortButton();
+    this.draw();
+    this.refreshSortPanel?.();
+  }
+
+  setSort(sort) {
+    this.sort = sort;
+    this.userSort = sort;
+    this.syncSortButton();
+    this.draw();
+    this.refreshSortPanel?.();
+  }
+
+  syncSortButton() {
+    this.sortBtn?.toggleClass("is-active", !!this.sort);
+    this.sortBtn?.setText(this.sort ? `Sort ${this.sort.dir === "desc" ? "\u25BC" : "\u25B2"}` : "Sort");
+  }
+
+  setWidth(id, px, final) {
+    this.widths = { ...this.widths, [id]: px };
+    this.draw();
+    if (final) this.plugin.persistWidths(this);
+  }
+
+  resetWidth(id) {
+    const { [id]: _drop, ...rest } = this.widths;
+    this.widths = rest;
+    this.draw();
+    this.plugin.persistWidths(this);
+  }
+
   // (Re)draws the chart. Scroll position is kept unless `scrollToToday` is set.
   draw(scrollToToday = false) {
     if (!this.hostEl || this.dead) return;
     try {
-      this.visible = visibleTasks(this.tasks, this.collapsed);
+      this.visible = visibleTasks(this.arranged(), this.collapsed);
       drawChart(this.hostEl, {
         tasks: this.visible,
         collapsed: this.collapsed,
@@ -170,9 +252,18 @@ class GanttBlock extends MarkdownRenderChild {
         patternId: `${this.id}-hatch`,
         columns: visibleColumns(this.available, this.layout),
         showTable: this.showTable,
+        measure: this.measurer(),
+        widths: this.widths,
+        sort: this.sort,
+        scheme: this.scheme(),
+        nameColors: nameColors(this.tasks, { scheme: this.scheme(), seed: this.colorSeed() }),
         onToggle: (id) => this.toggleTask(id),
         onReorder: (id, slot) => this.reorderVisible(id, slot),
         onHeaderMenu: (e, col) => this.headerMenu(e, col),
+        onHeaderClick: (id) => this.cycleSort(id),
+        onResize: (id, px, final) => this.setWidth(id, px, final),
+        onResetWidth: (id) => this.resetWidth(id),
+        onActivate: (id) => this.plugin.activateTask(this, id),
         scrollToToday,
       });
     } catch (e) {
@@ -187,7 +278,7 @@ class GanttBlock extends MarkdownRenderChild {
   async render() {
     let doc;
     try {
-      doc = parseYaml(this.source);
+      doc = parseYaml(normalizeYaml(this.source));
     } catch (e) {
       return this.showError(`YAML problem - ${e.message}`);
     }
@@ -200,6 +291,8 @@ class GanttBlock extends MarkdownRenderChild {
     const tasks = buildTasks(doc.rows, this.today);
     this.state = { scale: opts.scale, mode: opts.mode };
     this.collapsed = new Set(opts.collapsed ? parentIds(tasks) : []);
+    this.filter = this.filter ?? { text: "", tag: "" }; // kept when a chart is redrawn after an edit
+    this.widths = { ...(this.plugin.state.widths ?? {}) };
 
     // Table columns: this block's own `columns:` / `table:` win; otherwise the layout saved for all charts.
     this.opts = opts;
@@ -208,12 +301,18 @@ class GanttBlock extends MarkdownRenderChild {
     this.pinnedTable = opts.table != null;
     this.layout = this.startLayout();
     this.showTable = opts.table ?? this.plugin.state.table !== false;
+    // Sorting: this chart's own `sort:`, unless the reader has since chosen another order.
+    const sortId = opts.sort ? (opts.sort.key.toLowerCase() === "name" ? "name" : matchColumn(this.available, opts.sort.key)) : null;
+    this.sort = this.userSort !== undefined ? this.userSort : sortId ? { id: sortId, dir: opts.sort.dir } : null;
 
     this.closePopover();
     this.disposePrintFrame();
     this.printEl = null;
     this.containerEl.empty();
     const block = this.containerEl.createDiv({ cls: "epq-gantt-block" });
+    block.dataset.ogTheme = this.plugin.state.theme;
+    this.blockEl = block;
+    this.tasks = tasks;
     this.buildToolbar(block, parentIds(tasks).length > 0);
     const legend = this.buildLegend(block, opts);
     legend.toggleClass("is-hidden", !this.plugin.state.legend);
@@ -223,14 +322,51 @@ class GanttBlock extends MarkdownRenderChild {
     this.wasFull = false;
     const host = block.createDiv({ cls: "epq-gantt-host" });
     host.id = this.id;
-    host.style.height = `${opts.height}px`;
+    host.style.height = `${this.height ?? opts.height}px`;
     this.hostEl = host;
+    this.addResizer(block, host);
     this.opts = opts;
     this.tasks = tasks;
     this.visible = visibleTasks(tasks, this.collapsed);
     this.info = new Map(tasks.map((t) => [t.id, t]));
     this.setupTooltip();
     this.draw(true);
+  }
+
+  // Drag the bar along the bottom edge to make the chart taller or shorter (remembered until the chart is redrawn from
+  // its YAML).
+  addResizer(block, host) {
+    const bar = block.createDiv({ cls: "epq-gantt-resizer", attr: { title: "Drag to resize the chart" } });
+    bar.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || block.classList.contains("is-expanded") || block.ownerDocument.fullscreenElement === block) return;
+      e.preventDefault();
+      const doc = block.ownerDocument;
+      const y0 = e.clientY;
+      const h0 = host.offsetHeight;
+      bar.addClass("is-dragging");
+      const move = (ev) => {
+        this.height = Math.max(160, Math.round(h0 + ev.clientY - y0));
+        host.style.height = `${this.height}px`;
+      };
+      const up = () => {
+        doc.removeEventListener("pointermove", move);
+        doc.removeEventListener("pointerup", up);
+        doc.removeEventListener("pointercancel", up);
+        bar.removeClass("is-dragging");
+        this.draw();
+      };
+      doc.addEventListener("pointermove", move);
+      doc.addEventListener("pointerup", up);
+      doc.addEventListener("pointercancel", up);
+    });
+    bar.addEventListener("dblclick", () => { this.height = undefined; host.style.height = `${this.opts.height}px`; this.draw(); });
+  }
+
+  // The theme or custom CSS changed.
+  applyTheme() {
+    if (!this.blockEl || this.dead) return;
+    this.blockEl.dataset.ogTheme = this.plugin.state.theme;
+    this.draw();
   }
 
   // ---- Table layout: show / hide / add / reorder columns ---------------------------------------
@@ -251,6 +387,7 @@ class GanttBlock extends MarkdownRenderChild {
     if (!this.available || this.dead) return;
     if (!this.pinnedLayout) this.layout = this.startLayout();
     if (!this.pinnedTable) this.showTable = this.plugin.state.table !== false;
+    this.widths = { ...(this.plugin.state.widths ?? {}) };
     this.draw(true);
     this.syncTableButton();
     this.refreshColumnsPanel?.();
@@ -285,6 +422,9 @@ class GanttBlock extends MarkdownRenderChild {
     menu.addItem((it) => it.setTitle(`Hide "${col.label}"`).setIcon("eye-off").onClick(() => this.setShown(col.id, false)));
     if (i > 0) menu.addItem((it) => it.setTitle("Move left").setIcon("arrow-left").onClick(() => this.reorderVisible(col.id, i - 1)));
     if (i >= 0 && i < vis.length - 1) menu.addItem((it) => it.setTitle("Move right").setIcon("arrow-right").onClick(() => this.reorderVisible(col.id, i + 1)));
+    menu.addItem((it) => it.setTitle("Sort ascending").setIcon("arrow-up").onClick(() => this.setSort({ id: col.id, dir: "asc" })));
+    menu.addItem((it) => it.setTitle("Sort descending").setIcon("arrow-down").onClick(() => this.setSort({ id: col.id, dir: "desc" })));
+    menu.addItem((it) => it.setTitle("Fit width to text").setIcon("move-horizontal").onClick(() => this.resetWidth(col.id)));
     menu.addSeparator();
     menu.addItem((it) => it.setTitle("Choose columns\u2026").setIcon("columns").onClick(() => this.openColumns()));
     menu.showAtMouseEvent(evt);
@@ -350,6 +490,11 @@ class GanttBlock extends MarkdownRenderChild {
       this.applyLayout();
     });
     tools.createEl("button", { text: "Reset" }).addEventListener("click", () => this.resetColumns());
+    tools.createEl("button", { text: "Fit widths", attr: { title: "Forget dragged column widths; every column fits its text again" } }).addEventListener("click", () => {
+      this.widths = {};
+      this.draw();
+      this.plugin.persistWidths(this);
+    });
     const list = pop.createDiv({ cls: "epq-col-list" });
     this.refreshColumnsPanel = () => this.fillColumnList(list);
     this.fillColumnList(list);
@@ -416,6 +561,50 @@ class GanttBlock extends MarkdownRenderChild {
     doc.addEventListener("pointermove", move);
     doc.addEventListener("pointerup", done);
     doc.addEventListener("pointercancel", done);
+  }
+
+  // ---- Sort, theme and help --------------------------------------------------------------------------------------------
+  openSort() {
+    this.openPopover(this.sortBtn, "is-sort", (pop) => this.buildSortPanel(pop));
+  }
+
+  buildSortPanel(pop) {
+    pop.createDiv({ cls: "epq-pop-head" }).createSpan({ cls: "epq-pop-title", text: "Sort rows" });
+    const row = pop.createDiv({ cls: "epq-pop-row" });
+    row.createSpan({ text: "By" });
+    const pick = row.createEl("select", { attr: { "aria-label": "Sort by" } });
+    pick.createEl("option", { value: "", text: "Original order" });
+    pick.createEl("option", { value: "name", text: "Name" });
+    for (const c of this.available) pick.createEl("option", { value: c.id, text: c.label });
+    const dirRow = pop.createDiv({ cls: "epq-pop-row" });
+    dirRow.createSpan({ text: "Order" });
+    const seg = dirRow.createDiv({ cls: "epq-seg" });
+    const asc = seg.createEl("button", { text: "Ascending" });
+    const desc = seg.createEl("button", { text: "Descending" });
+    const sync = () => {
+      pick.value = this.sort?.id ?? "";
+      asc.toggleClass("is-active", !this.sort || this.sort.dir === "asc");
+      desc.toggleClass("is-active", this.sort?.dir === "desc");
+      asc.disabled = desc.disabled = !this.sort;
+    };
+    this.refreshSortPanel = sync;
+    sync();
+    pick.addEventListener("change", () => this.setSort(pick.value ? { id: pick.value, dir: this.sort?.dir ?? "asc" } : null));
+    asc.addEventListener("click", () => this.sort && this.setSort({ ...this.sort, dir: "asc" }));
+    desc.addEventListener("click", () => this.sort && this.setSort({ ...this.sort, dir: "desc" }));
+    pop.createDiv({ cls: "epq-pop-note", text: "Subtasks stay under their parent; only tasks with the same parent change places. Rows with nothing in that column go last. You can also click a column heading: once for ascending, again for descending, a third time to clear." });
+  }
+
+  openTheme() {
+    this.openPopover(this.themeBtn, "is-theme", (pop) => this.buildThemePanel(pop));
+  }
+
+  buildThemePanel(pop) {
+    this.plugin.buildThemePanel(pop, (blob, name) => this.deliver(blob, name));
+  }
+
+  openHelp(start = "help") {
+    this.plugin.openHelp(start);
   }
 
   // ---- Print and export --------------------------------------------------------------------------
@@ -508,6 +697,9 @@ class GanttBlock extends MarkdownRenderChild {
       density,
       fit: density === "print" ? { width: printDesignWidth(out.orientation), minTimeline: 360 } : null,
       measure: this.measurer(),
+      widths: this.widths,
+      allTasks: this.tasks,
+      colorSeed: this.colorSeed(),
     });
   }
 
@@ -704,7 +896,27 @@ class GanttBlock extends MarkdownRenderChild {
     this.columnsBtn.addEventListener("click", () => this.openColumns());
     this.toolbarEl = bar;
 
+    const arrange = bar.createDiv({ cls: "epq-gantt-group" });
+    this.sortBtn = arrange.createEl("button", { text: "Sort", attr: { title: "Sort the rows (or click a column heading)" } });
+    this.sortBtn.addEventListener("click", () => this.openSort());
+
+    const filter = bar.createDiv({ cls: "epq-gantt-filter" });
+    const box = filter.createEl("input", { type: "search", placeholder: "Filter tasks", attr: { "aria-label": "Filter tasks by name, notes or tag" } });
+    box.value = this.filter?.text ?? "";
+    box.addEventListener("input", () => { this.filter = { ...this.filter, text: box.value }; this.draw(); });
+    const tagList = allTags(this.tasks ?? []);
+    if (tagList.length) {
+      const pick = filter.createEl("select", { attr: { "aria-label": "Filter by tag" } });
+      pick.createEl("option", { value: "", text: "All tags" });
+      for (const t of tagList) pick.createEl("option", { value: t, text: `# ${t}` });
+      pick.value = this.filter?.tag ?? "";
+      pick.addEventListener("change", () => { this.filter = { ...this.filter, tag: pick.value }; this.draw(); });
+    }
+
     const tail = bar.createDiv({ cls: "epq-gantt-group epq-gantt-tail" });
+    tail.createEl("button", { text: "Today", attr: { title: "Scroll to today" } }).addEventListener("click", () => this.draw(true));
+    const edit = tail.createEl("button", { text: "Edit", cls: "is-primary", attr: { title: "Edit this chart with forms or YAML" } });
+    edit.addEventListener("click", () => this.plugin.activateTask(this, null));
     this.legendBtn = tail.createEl("button", { text: "Legend" });
     this.legendBtn.addEventListener("click", async () => {
       const show = !this.plugin.state.legend;
@@ -716,8 +928,16 @@ class GanttBlock extends MarkdownRenderChild {
     this.exportBtn.addEventListener("click", () => this.openExport());
     this.fullBtn = tail.createEl("button", { text: "Full screen" });
     this.fullBtn.addEventListener("click", () => this.toggleFullscreen());
-    const reset = tail.createEl("button", { text: "Reset" });
-    reset.addEventListener("click", () => this.render());
+    this.themeBtn = tail.createEl("button", { text: "Theme", attr: { title: "Colour theme and custom CSS" } });
+    this.themeBtn.addEventListener("click", () => this.openTheme());
+    tail.createEl("button", { text: "Help", attr: { title: "Help, about and credits" } }).addEventListener("click", () => this.openHelp());
+    const reset = tail.createEl("button", { text: "Reset", attr: { title: "Back to the chart as the YAML describes it" } });
+    reset.addEventListener("click", () => {
+      this.userSort = undefined;
+      this.filter = { text: "", tag: "" };
+      this.height = undefined;
+      this.render();
+    });
     this.syncButtons();
   }
 
@@ -729,6 +949,7 @@ class GanttBlock extends MarkdownRenderChild {
     }
     this.legendBtn?.toggleClass("is-active", !!this.plugin.state.legend);
     this.syncTableButton();
+    this.syncSortButton();
   }
 
   syncTableButton() {
@@ -750,6 +971,7 @@ class GanttBlock extends MarkdownRenderChild {
     item(bars, "sw sw-actual", "Actual (striped, over planned)");
     if (opts.progress) item(bars, "sw sw-progress", "Progress (started, no end - to today)");
     item(bars, "sw sw-today", "Today");
+    if (opts.markers?.length) item(bars, "sw sw-marker", "Marker (deadline, holiday...)");
 
     const text = legend.createDiv({ cls: "epq-gantt-legend-group" });
     text.createSpan({ cls: "epq-gantt-legend-title", text: "Task text" });
@@ -770,8 +992,10 @@ class GanttBlock extends MarkdownRenderChild {
 export default class EpqGanttPlugin extends Plugin {
   async onload() {
     const saved = (await this.loadData()) ?? {};
-    this.state = { legend: true, table: true, layout: null, ...saved, output: { ...DEFAULT_OUTPUT, ...saved.output } };
+    this.state = { legend: true, table: true, layout: null, widths: {}, theme: DEFAULT_THEME, customCss: "", ...saved, output: { ...DEFAULT_OUTPUT, ...saved.output } };
+    if (!THEMES.some((t) => t.id === this.state.theme) || (this.standalone && getTheme(this.state.theme).obsidianOnly)) this.state.theme = DEFAULT_THEME;
     this.blocks = new Set(); // live charts, so a layout change shows up in every open chart
+    installThemeStyles(document, this.state.customCss);
 
     const processor = (source, el, ctx) => ctx.addChild(new GanttBlock(el, source, this, ctx));
     this.registerMarkdownCodeBlockProcessor("epq-gantt", processor);
@@ -781,6 +1005,155 @@ export default class EpqGanttPlugin extends Plugin {
     } catch (e) {
       console.warn('Gantt: could not claim the "gantt" block; use ```epq-gantt', e);
     }
+  }
+
+  // The version, from manifest.json (Obsidian) or package.json (the standalone build), which are kept in sync.
+  get version() {
+    return this.manifest?.version ?? globalThis.__GANTT_VERSION__ ?? "";
+  }
+
+  get standalone() {
+    return !!globalThis.__GANTT_STANDALONE__;
+  }
+
+  async setTheme(id) {
+    this.state.theme = id;
+    await this.saveData(this.state);
+    this.applyThemeEverywhere();
+  }
+
+  async setCustomCss(css) {
+    this.state.customCss = css;
+    await this.saveData(this.state);
+    installThemeStyles(document, css);
+    this.applyThemeEverywhere();
+  }
+
+  applyThemeEverywhere() {
+    this.onThemeChange?.(this.state.theme); // the standalone app themes its own page too
+    for (const b of this.blocks) b.applyTheme();
+  }
+
+  // Column widths are shared by every chart, like the column layout.
+  async persistWidths(source) {
+    this.state.widths = { ...source.widths };
+    await this.saveData(this.state);
+    for (const b of this.blocks) if (b !== source) b.adoptSavedView();
+  }
+
+  // Double-click on a task name, or the Edit button (id = null). The standalone app replaces this to switch its editor
+  // pane; in Obsidian it opens the editor in a dialog.
+  activateTask(block, id) {
+    if (this.onTaskActivate) return this.onTaskActivate(block, id);
+    this.openEditorDialog(block, id);
+  }
+
+  openEditorDialog(block, id) {
+    let work = block.source;
+    const parse = (t) => parseYaml(normalizeYaml(t));
+    const yaml = createCodeEditor({
+      value: work,
+      onInput: (t) => {
+        work = t;
+        try { parse(t); yaml.setError(0); } catch (e) { yaml.setError((e.mark?.line ?? -1) + 1); }
+      },
+    });
+    const visual = createVisualEditor({ parse, setText: (t) => { work = t; yaml.setValue(t); } });
+    const save = h("button", { class: "epq-vis-btn is-primary", text: "Save to note", onclick: async () => { if (await this.writeBack(block, work)) dlg.close(); } });
+    const copy = h("button", { class: "epq-vis-btn", text: "Copy YAML", onclick: async () => { try { await navigator.clipboard.writeText(work); new Notice("Copied the YAML."); } catch { new Notice("Couldn't copy."); } } });
+    const cancel = h("button", { class: "epq-vis-btn", text: "Cancel", onclick: () => dlg.close() });
+    const dlg = openDialog({
+      title: "Edit chart", wide: true, themeId: this.state.theme, start: "visual", footer: [copy, cancel, save],
+      tabs: [
+        { id: "visual", label: "Visual", render: (el) => { el.append(visual.el); visual.load(work); if (id) visual.select(pathFromId(id)); } },
+        { id: "yaml", label: "YAML", render: (el) => { el.append(yaml.el); yaml.setValue(work); yaml.focus(); } },
+      ],
+    });
+  }
+
+  // Puts new YAML back into the ```gantt block it came from, leaving the rest of the note alone.
+  async writeBack(block, newSource) {
+    const body = String(newSource).replace(/\s+$/, "");
+    try {
+      const info = block.ctx?.getSectionInfo?.(block.containerEl);
+      const file = this.app.vault.getAbstractFileByPath(block.ctx?.sourcePath ?? "");
+      if (!info || !file) throw new Error("this block's place in the note could not be found (try the reading view)");
+      let ok = true;
+      await this.app.vault.process(file, (data) => {
+        const eol = data.includes("\r\n") ? "\r\n" : "\n";
+        const lines = data.split(eol);
+        const first = lines[info.lineStart] ?? "";
+        const current = lines.slice(info.lineStart + 1, info.lineEnd).join(eol).trim();
+        if (!/^\s*(```|~~~)/.test(first) || current !== String(block.source).trim()) { ok = false; return data; } // the note changed under us
+        lines.splice(info.lineStart + 1, info.lineEnd - info.lineStart - 1, ...body.split("\n"));
+        return lines.join(eol);
+      });
+      if (!ok) throw new Error("the note changed since this chart was drawn; close this and open Edit again");
+      new Notice("Gantt: chart saved to the note.");
+      return true;
+    } catch (e) {
+      console.error(e);
+      try { await navigator.clipboard.writeText(body); } catch { /* clipboard unavailable */ }
+      new Notice(`Gantt: couldn't save into the note (${e.message}). The new YAML is on your clipboard.`, 8000);
+      return false;
+    }
+  }
+
+  // The theme picker and custom-CSS box. `deliver(blob, name)` saves a downloaded file (the CSS template).
+  buildThemePanel(pop, deliver) {
+    const plugin = this;
+    pop.createDiv({ cls: "epq-pop-head" }).createSpan({ cls: "epq-pop-title", text: "Theme" });
+    const list = pop.createDiv({ cls: "epq-theme-list" });
+    const paint = () => {
+      list.empty();
+      for (const t of themeList({ obsidian: !plugin.standalone })) {
+        const item = list.createEl("button", { cls: `epq-theme-item${plugin.state.theme === t.id ? " is-active" : ""}`, attr: { "aria-pressed": String(plugin.state.theme === t.id) } });
+        const sw = item.createSpan({ cls: "epq-theme-sw" });
+        for (const c of [t.vars["--og-bg"], t.vars["--og-accent"], t.vars["--tsg-chart-bar-color-1"], t.vars["--tsg-chart-bar-color-2"]]) sw.createEl("i").setAttr("style", `background:${c}`);
+        item.createSpan({ text: t.name });
+        item.addEventListener("click", async () => { await plugin.setTheme(t.id); paint(); });
+      }
+    };
+    paint();
+
+    pop.createDiv({ cls: "epq-pop-sub", text: "Custom CSS" });
+    const acts = pop.createDiv({ cls: "epq-pop-actions" });
+    const file = h("input", { type: "file", accept: ".css,text/css", hidden: true });
+    pop.append(file);
+    const area = h("textarea", { class: "epq-css-area", rows: 7, spellcheck: "false", placeholder: "/* Paste CSS here, or upload a .css file */", "aria-label": "Custom CSS" });
+    area.value = plugin.state.customCss ?? "";
+    const status = h("div", { class: "epq-pop-note" });
+    const showStatus = () => { status.textContent = (plugin.state.customCss ?? "").trim() ? `Custom CSS is on (${plugin.state.customCss.split("\n").length} lines). It is applied after the theme.` : "No custom CSS. Download the template to see every variable you can change."; };
+    showStatus();
+    acts.createEl("button", { text: "Upload .css\u2026" }).addEventListener("click", () => file.click());
+    acts.createEl("button", { text: "Template" }).addEventListener("click", () => deliver(new Blob([customCssTemplate()], { type: "text/css" }), "OpenGantt-theme.css"));
+    acts.createEl("button", { text: "Clear" }).addEventListener("click", async () => { area.value = ""; await plugin.setCustomCss(""); showStatus(); });
+    file.addEventListener("change", async () => {
+      const f = file.files?.[0];
+      if (!f) return;
+      area.value = await f.text();
+      await plugin.setCustomCss(area.value);
+      showStatus();
+      file.value = "";
+    });
+    let timer = 0;
+    area.addEventListener("input", () => {
+      clearTimeout(timer);
+      timer = setTimeout(async () => { await plugin.setCustomCss(area.value); showStatus(); }, 300);
+    });
+    pop.append(area, status);
+  }
+
+  openHelp(start = "help") {
+    const standalone = this.standalone;
+    openDialog({
+      title: "OpenGantt", start, wide: true, themeId: this.state.theme,
+      tabs: [
+        { id: "help", label: "Help", render: (el) => renderHelp(el, { standalone }) },
+        { id: "about", label: "About", render: (el) => renderAbout(el, { version: this.version, standalone }) },
+        { id: "credits", label: "Credits", render: (el) => renderCredits(el) },
+      ],
+    });
   }
 
   async setLegend(show) {

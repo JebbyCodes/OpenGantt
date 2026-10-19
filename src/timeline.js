@@ -2,6 +2,8 @@
 // One function (axis.x) maps a date to a pixel position; planned bars, actual bars, progress bars
 // and the today line ALL go through it, so they can never disagree.
 
+import { planSegsOf, factSegsOf } from "./model.js";
+
 export const DAY = 86400000;
 export const PPD = { day: 28, week: 9, month: 3, year: 0.9 }; // pixels per day for each scale
 
@@ -25,8 +27,9 @@ export function nextUnit(d, scale) {
 }
 
 // `ppdOverride` replaces the scale's pixels-per-day (print fits a long chart onto one page width).
-export function makeAxis(tasks, today, scale = "day", padding = 7, ppdOverride) {
-  const dates = [today];
+// `extra` is a list of dates the axis must also cover (marker dates).
+export function makeAxis(tasks, today, scale = "day", padding = 7, ppdOverride, extra = []) {
+  const dates = [today, ...extra.filter(Boolean)];
   for (const t of tasks) {
     for (const d of [t.datePlannedStart, t.datePlannedEnd, t.dateActualStart, t.dateActualEnd]) if (d) dates.push(d);
   }
@@ -66,6 +69,33 @@ export function makeAxis(tasks, today, scale = "day", padding = 7, ppdOverride) 
   return { start, end, scale, ppd, width: x(end), x, bottom, top, todayX: x(today) + ppd / 2 };
 }
 
+// ---- Markers, weekends and colours ----------------------------------------------------------
+
+export const markerDates = (opts) => (opts?.markers ?? []).map((m) => m.date);
+
+// Vertical marker lines: x is the middle of the marked day's column, the same convention as the today line.
+export function markerShapes(axis, opts) {
+  return (opts?.markers ?? []).map((m) => ({ x: axis.x(m.date) + axis.ppd / 2, label: m.label, date: m.date }));
+}
+
+// Shaded Saturday + Sunday blocks as [{ x, w }]. Only the day scale shows them (other scales are too coarse).
+export function weekendSpans(axis, opts) {
+  if (!opts?.weekends || axis.scale !== "day") return [];
+  const out = [];
+  for (let d = axis.start; d < axis.end; d = new Date(+d + DAY)) {
+    const dow = d.getUTCDay();
+    if (dow !== 0 && dow !== 6) continue;
+    const x = axis.x(d);
+    const last = out[out.length - 1];
+    if (last && Math.abs(last.x + last.w - x) < 1e-6) last.w += axis.ppd;
+    else out.push({ x, w: axis.ppd });
+  }
+  return out;
+}
+
+// The distinct custom task colours used by a list of bars, in first-seen order (each needs its own hatch pattern).
+export const barColors = (bars) => [...new Set(bars.map((b) => b.color).filter(Boolean))];
+
 // Which colour the task's name takes (matches the legend's "Task text").
 export function taskStatus(t, today) {
   if (t.dateActualStart && !t.factOpen) {
@@ -78,16 +108,18 @@ export function taskStatus(t, today) {
 const MIN_W = 5;
 
 // Bars for one task: [{ kind: "plan" | "actual" | "progress", x, w }]. Inclusive end dates.
+// A task with several planned or actual ranges gets one bar per range, all in the same row.
 export function barsFor(t, axis, mode, opts, today) {
   const out = [];
   const span = (a, b) => ({ x: axis.x(a), w: Math.max(MIN_W, ((+b - +a) / DAY + 1) * axis.ppd) });
-  if (t.datePlannedStart && mode !== "actual") {
-    out.push({ kind: "plan", ...span(t.datePlannedStart, t.datePlannedEnd ?? t.datePlannedStart) });
+  if (mode !== "actual") {
+    for (const s of planSegsOf(t)) out.push({ kind: "plan", ...span(s.start, s.end) });
   }
-  if (t.dateActualStart && mode !== "planned") {
-    const open = t.factOpen;
-    const end = open ? (today > t.dateActualStart ? today : t.dateActualStart) : t.dateActualEnd ?? t.dateActualStart;
-    out.push({ kind: open && opts.progress ? "progress" : "actual", ...span(t.dateActualStart, end) });
+  if (mode !== "planned") {
+    for (const s of factSegsOf(t)) {
+      const end = s.open ? (today > s.start ? today : s.start) : s.end;
+      out.push({ kind: s.open && opts.progress ? "progress" : "actual", ...span(s.start, end) });
+    }
   }
   return out;
 }
@@ -126,10 +158,44 @@ export function bodyBars(tasks, axis, mode, opts, today, { rowH, barTop }) {
   tasks.forEach((t, row) => {
     for (const b of barsFor(t, axis, mode, opts, today)) {
       const inset = b.kind === "progress" ? barH * 0.12 : 0;
-      const bar = { row, id: t.id, kind: b.kind, x: b.x, y: barTop + inset, w: b.w, h: barH - inset * 2, rx: Math.min(5, barH / 2) };
+      const bar = { row, id: t.id, kind: b.kind, color: t.color ?? null, x: b.x, y: barTop + inset, w: b.w, h: barH - inset * 2, rx: Math.min(5, barH / 2) };
       if (b.kind === "progress" && b.w >= 44 && t.progress) bar.label = { x: b.x + b.w / 2, y: rowH / 2, text: `${t.progress}%` };
       out.push(bar);
     }
   });
+  return out;
+}
+
+// ---- Tag labels --------------------------------------------------------------------------------------------------------
+// A small tag icon and the task's tags sit just beyond the end of its bars (or before the start when there is no room),
+// quiet enough not to compete with the bars. The full list is in the tooltip.
+export const TAG_ICON_D = "M1.5 1.5h4.6l4.4 4.4a1 1 0 0 1 0 1.4L7.3 10.5a1 1 0 0 1-1.4 0L1.5 6.1zM4.2 3.4a.8.8 0 1 0 0 1.6.8.8 0 0 0 0-1.6z";
+export const TAG_ICON_W = 13;
+
+// A tag's own hue, the same everywhere for the same word.
+export function tagHue(tag) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < tag.length; i++) { h ^= tag.toLowerCase().charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0) % 360;
+}
+export const tagColor = (tag, scheme = "dark") => `hsl(${tagHue(tag)} ${scheme === "light" ? "55% 36%" : "60% 70%"})`;
+
+// Returns Map(taskId -> { tags, text, x, textX }): x is where the icon goes, textX where the text starts.
+export function tagLabels(tasks, bars, axis, measure = (t, px) => t.length * px * 0.56, px = 10) {
+  const out = new Map();
+  for (const t of tasks) {
+    if (!t.tags?.length) continue;
+    const mine = bars.filter((b) => b.id === t.id);
+    if (!mine.length) continue;
+    const start = Math.min(...mine.map((b) => b.x));
+    const end = Math.max(...mine.map((b) => b.x + b.w));
+    const shown = t.tags.slice(0, 3);
+    const text = shown.join(" \u00b7 ") + (t.tags.length > shown.length ? ` +${t.tags.length - shown.length}` : "");
+    const w = TAG_ICON_W + Math.ceil(measure(text, px, false));
+    let x = null;
+    if (end + 6 + w <= axis.width) x = end + 6; // after the bars
+    else if (start - 6 - w >= 0) x = start - 6 - w; // no room there: before them
+    if (x != null) out.set(t.id, { tags: t.tags, text, x, textX: x + TAG_ICON_W });
+  }
   return out;
 }

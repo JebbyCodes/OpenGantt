@@ -18,6 +18,7 @@
 import esbuild from "esbuild";
 import fs from "node:fs";
 import path from "node:path";
+import { syncVersions } from "./scripts/sync-version.mjs";
 
 // -- configuration ----------------------------------------------------------
 
@@ -42,6 +43,11 @@ const LOADERS = {
 
 const started = Date.now();
 const root = process.cwd();
+
+// package.json holds the version; this copies it into manifest.json (which Obsidian reads, and the About box shows),
+// the Tauri config and the lockfile, so they can never drift apart.
+const { version, report: versionReport } = syncVersions();
+console.log(`  version  ${version}${versionReport.some((r) => r.changed) ? ` (synced ${versionReport.filter((r) => r.changed).map((r) => r.file).join(", ")})` : ""}`);
 
 const exists = (f) => fs.existsSync(f);
 const kb = (bytes) => `${(bytes / 1024).toFixed(1)} KB`;
